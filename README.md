@@ -219,7 +219,7 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 | Auth | Supabase Auth with anonymous sign-ins |
 | API | Supabase auto-generated REST API via `supabase-js` |
 | Frontend | React + Vite *(planned)* |
-| Hosting | Static host such as Vercel, Netlify, or Cloudflare Pages *(planned)* |
+| Hosting | Static host such as Vercel, Netlify, Github Pages, or Cloudflare Pages |
 | Data source | PokeAPI CSV dump and sprite repository |
 | Seeding | Python 3 with `psycopg` |
 
