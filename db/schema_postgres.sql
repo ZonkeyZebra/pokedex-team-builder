@@ -130,9 +130,8 @@ CREATE TABLE item (
 -- =====================================================
 -- PART 2: USER DATA (owned by Supabase Auth users)
 -- =====================================================
--- Anonymous sign-ins count as the "authenticated" role, so visitors can
--- build and save teams with no signup. Add Google/email login later to
--- keep teams across devices.
+-- Email-authenticated users can build and save teams that persist across
+-- devices. Anonymous sessions are not used by the current frontend.
 
 CREATE TABLE team (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

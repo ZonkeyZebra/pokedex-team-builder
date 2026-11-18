@@ -2,7 +2,7 @@
 
 A public web app for browsing every Pokémon across all generations and building competitive teams. Pick a team of six, customize natures, EVs/IVs, items, and moves, then see how well it covers the type chart, what it is weak to, and how fast it is. Teams are saved to a cloud database, so they are still there when you come back.
 
-> **Status:** database schema and seed pipeline are done; frontend is in progress. See the [roadmap](#roadmap).
+> **Status:** database schema and seed pipeline are done; the frontend now has email-link sign-in, a home page, and starter Pokédex and team-builder pages. See the [roadmap](#roadmap).
 
 ---
 
@@ -33,7 +33,7 @@ A public web app for browsing every Pokémon across all generations and building
 
 ### Saved data
 - Teams, favorites, and settings (such as default generation) stored per user
-- No signup required: visitors get an anonymous account automatically
+- Email magic-link sign-in; saved teams are tied to the user's account
 
 ---
 
@@ -64,7 +64,7 @@ flowchart LR
     end
 
     subgraph Supabase["Supabase"]
-        AUTH["Auth: anonymous sign-in"]
+        AUTH["Auth: email magic link"]
         API["Auto-generated REST API"]
         DB[("Postgres with Row Level Security")]
         API --> DB
@@ -99,8 +99,11 @@ sequenceDiagram
     participant Auth as Supabase Auth
     participant DB as Postgres with RLS
 
-    U->>App: Open the site
-    App->>Auth: Anonymous sign-in
+    U->>App: Enter email address
+    App->>Auth: Request magic link
+    Auth-->>U: Email sign-in link
+    U->>App: Open link
+    App->>Auth: Establish session
     Auth-->>App: Session with JWT
     App->>DB: Load Pokémon, moves, types, natures, items
     DB-->>App: Public read-only reference data
@@ -216,7 +219,7 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 | Layer | Choice |
 |-------|--------|
 | Database | Postgres on Supabase (free tier) |
-| Auth | Supabase Auth with anonymous sign-ins |
+| Auth | Supabase Auth with email magic links |
 | API | Supabase auto-generated REST API via `supabase-js` |
 | Frontend | React + Vite *(planned)* |
 | Hosting | Static host such as Vercel, Netlify, Github Pages, or Cloudflare Pages |
@@ -233,18 +236,29 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 
 1. **Create a Supabase project** at [supabase.com](https://supabase.com).
 2. **Create the tables:** open the SQL editor and run `db/schema_postgres.sql`.
-3. **Enable anonymous sign-ins** in the project's Authentication settings.
-4. **Seed the reference data:**
-   ```bash
-   pip install "psycopg[binary]"
-   export DATABASE_URL="postgresql://postgres:<password>@<host>:5432/postgres"
-   python scripts/seed_pokedex.py --dry-run   # check row counts first
-   python scripts/seed_pokedex.py             # load into the empty database
+3. **Configure email sign-in** in Authentication → Providers. Email should be enabled. In Authentication → URL Configuration, add your local app URL (`http://localhost:5173`) to the redirect URLs.
+4. **Seed the reference data** from PowerShell (run from the repository root):
+   ```powershell
+   py -m venv .venv
+   .venv\Scripts\Activate.ps1
+   py -m pip install "psycopg[binary]>=3.1"
+   $env:DATABASE_URL = "postgresql://postgres:<password>@<host>:5432/postgres"
+   py scripts\seed_pokedex.py --dry-run   # check row counts first
+   py scripts\seed_pokedex.py             # load into the empty database
    ```
-   Use the connection string from Supabase's Connect dialog. If your network has no IPv6, use the Session pooler string.
-5. **Run the frontend** *(planned)*: add your Supabase project URL and public API key to a `.env` file, then `npm install` and `npm run dev`.
+   Use the connection string from Supabase's Connect dialog. If your network has no IPv6, use the Session pooler string. Keep this database password private; it is only for the seed script and must never go in a `VITE_` variable.
+5. **Configure and run the frontend:**
+   ```powershell
+   Copy-Item .env.example .env.local
+   # Edit .env.local and set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+   npm install
+   npm run dev
+   ```
+   Use Node.js 20.19+ or 22.12+. Use the project's URL and anon/publishable key from Supabase's API settings. Never put the `service_role` key in the frontend. The seed can also be previewed without a database URL using `py scripts\seed_pokedex.py --dry-run`.
 
 Re-seeding with `--reset` wipes the reference tables and also deletes any saved teams, so only use it before real users arrive.
+
+The starter app provides `/` for email-link sign-in, `/home` for navigation, `/pokedex` for searching and browsing default Pokémon forms, and `/team-builder` for creating teams and adding Pokémon. The team builder writes to the user-owned tables protected by the schema's RLS policies.
 
 ### Seed data notes
 - Names are stored as PokeAPI identifiers (`mr-mime`, `thunder-punch`); the frontend formats them for display.
@@ -254,7 +268,7 @@ Re-seeding with `--reset` wipes the reference tables and also deletes any saved 
 
 ---
 
-## Planned repository layout
+## Repository layout
 
 ```
 .
@@ -262,9 +276,9 @@ Re-seeding with `--reset` wipes the reference tables and also deletes any saved 
 │   └── schema_postgres.sql      # tables, constraints, RLS policies
 ├── scripts/
 │   └── seed_pokedex.py          # PokeAPI CSV -> Supabase Postgres
-├── src/                         # frontend (planned)
-│   ├── lib/                     # supabase client, calculation modules
-│   └── pages/                   # Pokédex, Team Builder, Type Chart, Damage Calc
+├── src/
+│   ├── lib/                     # Supabase client, auth, formatting
+│   └── pages/                   # Sign-in, home, Pokédex, Team Builder
 └── README.md
 ```
 
@@ -277,8 +291,9 @@ Estimated hours for the 30–40 hour project budget:
 | Milestone | Est. hours | Status |
 |-----------|-----------:|--------|
 | Database schema, RLS, seed pipeline | — | Done |
-| Pokédex list and detail pages (all generations) | 5–7 | Not started |
-| Basic team builder with live stats | 6–8 | Not started |
+| Frontend foundation, email sign-in, home, starter pages | — | Started |
+| Pokédex list and detail pages (all generations) | 5–7 | Starter list page |
+| Basic team builder with live stats | 6–8 | Starter team creation and roster |
 | Saved teams, favorites, Showdown import/export | 3–4 | Not started |
 | Interactive type chart | 2–3 | Not started |
 | Team analysis: coverage, weaknesses, speed chart | 4–6 | Not started |
