@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { formatIdentifier } from "../lib/format";
@@ -17,70 +17,82 @@ type Pokemon = {
   base_spe: number;
 };
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 48;
+const COLUMNS =
+  "id,dex_number,name,generation,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe";
 
 export default function PokedexPage() {
   const [pokemon, setPokemon] = useState<Pokemon[]>([]);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [generation, setGeneration] = useState("");
-  const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const latestRequest = useRef(0);
 
+  // Search as you type: wait a moment after the last keystroke, then query.
   useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  async function fetchPage(offset: number, replace: boolean) {
     if (!supabase) return;
-    let active = true;
-    async function loadPokemon() {
-      setLoading(true);
-      setError(null);
-      try {
-        let query = supabase!
-          .from("pokemon")
-          .select(
-            "id,dex_number,name,generation,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe",
-            { count: "exact" },
-          )
-          .eq("is_default", true)
-          .order("dex_number", { ascending: true })
-          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    const requestId = ++latestRequest.current;
+    if (replace) setLoading(true);
+    else setLoadingMore(true);
+    setError(null);
+    try {
+      let query = supabase
+        .from("pokemon")
+        .select(COLUMNS, { count: "exact" })
+        .eq("is_default", true)
+        .order("dex_number", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
 
-        const trimmedSearch = search.trim();
-        if (trimmedSearch) {
-          query = query.ilike("name", `%${trimmedSearch.toLowerCase().replace(/\s+/g, "-")}%`);
-        }
-        if (generation) query = query.eq("generation", Number(generation));
+      if (search) {
+        // Numbers search by dex number; anything else searches by name.
+        query = /^\d+$/.test(search)
+          ? query.eq("dex_number", Number(search))
+          : query.ilike("name", `%${search.toLowerCase().replace(/\s+/g, "-")}%`);
+      }
+      if (generation) query = query.eq("generation", Number(generation));
 
-        const { data, count, error: queryError } = await query;
-        if (!active) return;
-        if (queryError) {
-          setError(queryError.message);
-        } else {
-          setPokemon((data ?? []) as Pokemon[]);
-          setTotal(count ?? 0);
-        }
-      } catch (requestError) {
-        if (!active) return;
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Could not load Pokémon.",
-        );
-      } finally {
-        if (active) setLoading(false);
+      const { data, count, error: queryError } = await query;
+      if (requestId !== latestRequest.current) return;
+      if (queryError) {
+        setError(queryError.message);
+      } else {
+        const rows = (data ?? []) as Pokemon[];
+        setPokemon((current) => (replace ? rows : [...current, ...rows]));
+        setTotal(count ?? 0);
+      }
+    } catch (requestError) {
+      if (requestId !== latestRequest.current) return;
+      setError(
+        requestError instanceof Error ? requestError.message : "Could not load Pokémon.",
+      );
+    } finally {
+      if (requestId === latestRequest.current) {
+        setLoading(false);
+        setLoadingMore(false);
       }
     }
-    void loadPokemon();
-    return () => { active = false; };
-  }, [search, generation, page]);
-
-  function handleSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPage(0);
-    const form = event.currentTarget;
-    const input = form.elements.namedItem("pokemon-search") as HTMLInputElement;
-    setSearch(input.value);
   }
+
+  useEffect(() => {
+    void fetchPage(0, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, generation]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSearch(searchInput.trim());
+  }
+
+  const hasMore = pokemon.length < total;
 
   return (
     <main className="page">
@@ -88,45 +100,41 @@ export default function PokedexPage() {
         <div>
           <p className="eyebrow">Field guide</p>
           <h1>Pokédex</h1>
-          <p className="muted">The essentials for every Pokémon, all in one place.</p>
+          <p className="muted">Search by name or dex number, or filter by generation.</p>
         </div>
         <span className="count-pill">{total.toLocaleString()} Pokémon</span>
       </section>
 
-      <form className="filter-bar" onSubmit={handleSearch}>
+      <form className="filter-bar" onSubmit={handleSubmit} role="search">
         <label className="search-field">
           <span aria-hidden="true">⌕</span>
+          <span className="visually-hidden">Search Pokémon</span>
           <input
-            defaultValue={search}
-            key={search}
-            name="pokemon-search"
-            placeholder="Search by name"
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search by name or number"
             type="search"
+            value={searchInput}
           />
         </label>
         <label className="select-field">
           <span className="visually-hidden">Filter by generation</span>
-          <select
-            onChange={(event) => { setGeneration(event.target.value); setPage(0); }}
-            value={generation}
-          >
+          <select onChange={(event) => setGeneration(event.target.value)} value={generation}>
             <option value="">All generations</option>
             {Array.from({ length: 9 }, (_, index) => (
               <option key={index + 1} value={index + 1}>Generation {index + 1}</option>
             ))}
           </select>
         </label>
-        <button className="button primary" type="submit">Search</button>
       </form>
 
       {error && <p className="notice error" role="alert">Couldn’t load the Pokédex: {error}</p>}
       {loading ? (
         <div className="empty-state"><p>Loading Pokémon…</p></div>
-      ) : error ? null : pokemon.length === 0 ? (
+      ) : error && pokemon.length === 0 ? null : pokemon.length === 0 ? (
         <div className="empty-state">
           <span className="empty-icon">◎</span>
           <h2>{search ? "No matches yet" : "The Pokédex is waiting"}</h2>
-          <p>{search ? "Try another name or clear the generation filter." : "Run the seed script to load the Pokémon reference data."}</p>
+          <p>{search ? "Try another name or number, or clear the generation filter." : "Run the seed script to load the Pokémon reference data."}</p>
         </div>
       ) : (
         <>
@@ -157,18 +165,18 @@ export default function PokedexPage() {
               </Link>
             ))}
           </section>
-          <div className="pagination">
-            <button
-              className="button secondary"
-              disabled={page === 0}
-              onClick={() => setPage((current) => current - 1)}
-            >Previous</button>
-            <span>Page {page + 1} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}</span>
-            <button
-              className="button secondary"
-              disabled={(page + 1) * PAGE_SIZE >= total}
-              onClick={() => setPage((current) => current + 1)}
-            >Next</button>
+          <div className="list-footer">
+            <span>Showing {pokemon.length.toLocaleString()} of {total.toLocaleString()}</span>
+            {hasMore && (
+              <button
+                className="button secondary"
+                disabled={loadingMore}
+                onClick={() => void fetchPage(pokemon.length, false)}
+                type="button"
+              >
+                {loadingMore ? "Loading…" : `Load ${Math.min(PAGE_SIZE, total - pokemon.length)} more`}
+              </button>
+            )}
           </div>
         </>
       )}

@@ -42,6 +42,7 @@ type TypeEffectiveness = {
   multiplier: number | string;
 };
 type Encounter = {
+  id: number;
   version_group_id: number;
   location_name: string;
   method: string | null;
@@ -62,6 +63,8 @@ type PokemonDetail = {
   encounterCount: number;
   matchups: Matchup[];
 };
+
+const ENCOUNTER_PAGE_SIZE = 12;
 
 const STAT_FIELDS = [
   { label: "HP", field: "base_hp" },
@@ -102,6 +105,13 @@ export default function PokemonDetailPage() {
   const [detail, setDetail] = useState<PokemonDetail | null>(null);
   const [moveGeneration, setMoveGeneration] = useState(9);
   const [moveMethod, setMoveMethod] = useState("all");
+  const [encounterGame, setEncounterGame] = useState("");
+  const [encounterPage, setEncounterPage] = useState(0);
+  const [encounters, setEncounters] = useState<EncounterDetail[]>([]);
+  const [encounterCount, setEncounterCount] = useState(0);
+  const [encounterGames, setEncounterGames] = useState<VersionGroup[]>([]);
+  const [encounterLoading, setEncounterLoading] = useState(false);
+  const [encounterError, setEncounterError] = useState<string | null>(null);
   const [artMode, setArtMode] = useState<"artwork" | "sprite">("artwork");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -131,33 +141,29 @@ export default function PokemonDetailPage() {
         }
         const pokemon = pokemonData as Pokemon;
 
-        const [pokemonTypesResult, pokemonAbilitiesResult, learnsetResult, encounterResult, typeCatalogResult] =
+        const [pokemonTypesResult, pokemonAbilitiesResult, learnsetResult, typeCatalogResult] =
           await Promise.all([
             supabase!.from("pokemon_type").select("type_id,slot").eq("pokemon_id", id).order("slot"),
             supabase!.from("pokemon_ability").select("ability_id,slot,is_hidden").eq("pokemon_id", id).order("slot"),
             supabase!.from("pokemon_move").select("move_id,learn_method,level_learned").eq("pokemon_id", id).eq("generation", moveGeneration).order("level_learned").limit(300),
-            supabase!.from("encounter").select("version_group_id,location_name,method,min_level,max_level,chance", { count: "exact" }).eq("pokemon_id", id).order("location_name").limit(12),
             supabase!.from("type").select("id,name").order("id"),
           ]);
 
         const baseError = pokemonTypesResult.error
           ?? pokemonAbilitiesResult.error
           ?? learnsetResult.error
-          ?? encounterResult.error
           ?? typeCatalogResult.error;
         if (baseError) throw baseError;
 
         const pokemonTypes = (pokemonTypesResult.data ?? []) as PokemonTypeRow[];
         const pokemonAbilities = (pokemonAbilitiesResult.data ?? []) as PokemonAbilityRow[];
         const learnset = (learnsetResult.data ?? []) as LearnsetRow[];
-        const encounters = (encounterResult.data ?? []) as Encounter[];
         const typeCatalog = (typeCatalogResult.data ?? []) as TypeRow[];
         const typeIds = pokemonTypes.map((row) => row.type_id);
         const abilityIds = [...new Set(pokemonAbilities.map((row) => row.ability_id))];
         const moveIds = [...new Set(learnset.map((row) => row.move_id))];
-        const versionGroupIds = [...new Set(encounters.map((row) => row.version_group_id))];
 
-        const [effectiveness, abilities, moves, versionGroups] = await Promise.all([
+        const [effectiveness, abilities, moves] = await Promise.all([
           (async () => {
             if (!typeIds.length) return [] as TypeEffectiveness[];
             const { data, error: queryError } = await supabase!
@@ -185,21 +191,11 @@ export default function PokemonDetailPage() {
             if (queryError) throw queryError;
             return (data ?? []) as Move[];
           })(),
-          (async () => {
-            if (!versionGroupIds.length) return [] as VersionGroup[];
-            const { data, error: queryError } = await supabase!
-              .from("version_group")
-              .select("id,name,generation")
-              .in("id", versionGroupIds);
-            if (queryError) throw queryError;
-            return (data ?? []) as VersionGroup[];
-          })(),
         ]);
 
         const typeById = new Map(typeCatalog.map((type) => [type.id, type]));
         const abilityById = new Map(abilities.map((ability) => [ability.id, ability]));
         const moveById = new Map(moves.map((move) => [move.id, move]));
-        const versionGroupById = new Map(versionGroups.map((group) => [group.id, group]));
         const multiplierByAttacker = new Map<number, number>();
 
         for (const row of effectiveness) {
@@ -230,11 +226,6 @@ export default function PokemonDetailPage() {
           const ability = abilityById.get(row.ability_id);
           return ability ? [{ ...row, ability }] : [];
         });
-        const detailedEncounters = encounters.map((row) => ({
-          ...row,
-          version_group: versionGroupById.get(row.version_group_id) ?? null,
-        }));
-
         if (!active) return;
         setDetail({
           pokemon,
@@ -246,8 +237,8 @@ export default function PokemonDetailPage() {
             .sort((a, b) => pokemonTypes.findIndex((row) => row.type_id === a.id) - pokemonTypes.findIndex((row) => row.type_id === b.id)),
           abilities: detailedAbilities,
           moves: detailedMoves,
-          encounters: detailedEncounters,
-          encounterCount: encounterResult.count ?? encounters.length,
+          encounters: [],
+          encounterCount: 0,
           matchups,
         });
       } catch (requestError) {
@@ -260,6 +251,94 @@ export default function PokemonDetailPage() {
     void loadDetails();
     return () => { active = false; };
   }, [id, moveGeneration]);
+
+  useEffect(() => {
+    setEncounterGame("");
+    setEncounterPage(0);
+    setEncounters([]);
+    setEncounterCount(0);
+    setEncounterGames([]);
+  }, [id]);
+
+  useEffect(() => {
+    if (!supabase || !Number.isInteger(id) || id < 1) return;
+
+    let active = true;
+    async function loadEncounterGames() {
+      try {
+        const { data: groups, error: groupsError } = await supabase!
+          .from("version_group")
+          .select("id,name,generation")
+          .order("generation")
+          .order("name");
+        if (groupsError) throw groupsError;
+        if (active) setEncounterGames((groups ?? []) as VersionGroup[]);
+      } catch (requestError) {
+        if (active) setEncounterError(getErrorMessage(requestError));
+      }
+    }
+
+    void loadEncounterGames();
+    return () => { active = false; };
+  }, [id]);
+
+  useEffect(() => {
+    if (!supabase || !Number.isInteger(id) || id < 1) return;
+
+    let active = true;
+    async function loadEncounters() {
+      setEncounterLoading(true);
+      setEncounterError(null);
+      try {
+        let query = supabase!
+          .from("encounter")
+          .select("id,version_group_id,location_name,method,min_level,max_level,chance", { count: "exact" })
+          .eq("pokemon_id", id)
+          .order("location_name")
+          .order("id")
+          .range(encounterPage * ENCOUNTER_PAGE_SIZE, (encounterPage + 1) * ENCOUNTER_PAGE_SIZE - 1);
+
+        if (encounterGame) {
+          query = query.eq("version_group_id", Number(encounterGame));
+        }
+
+        const { data, count, error: queryError } = await query;
+        if (queryError) throw queryError;
+
+        const rows = (data ?? []) as Encounter[];
+        const versionGroupIds = [...new Set(rows.map((row) => row.version_group_id))];
+        let versionGroupById = new Map(encounterGames.map((group) => [group.id, group]));
+
+        const missingIds = versionGroupIds.filter((versionGroupId) => !versionGroupById.has(versionGroupId));
+        if (missingIds.length) {
+          const { data: groups, error: groupsError } = await supabase!
+            .from("version_group")
+            .select("id,name,generation")
+            .in("id", missingIds);
+          if (groupsError) throw groupsError;
+          versionGroupById = new Map([
+            ...versionGroupById,
+            ...((groups ?? []) as VersionGroup[]).map((group) => [group.id, group] as const),
+          ]);
+        }
+
+        if (active) {
+          setEncounters(rows.map((row) => ({
+            ...row,
+            version_group: versionGroupById.get(row.version_group_id) ?? null,
+          })));
+          setEncounterCount(count ?? 0);
+        }
+      } catch (requestError) {
+        if (active) setEncounterError(getErrorMessage(requestError));
+      } finally {
+        if (active) setEncounterLoading(false);
+      }
+    }
+
+    void loadEncounters();
+    return () => { active = false; };
+  }, [id, encounterGame, encounterPage, encounterGames]);
 
   const visibleMoves = detail?.moves.filter(
     (row) => moveMethod === "all" || row.learn_method === moveMethod,
@@ -432,15 +511,37 @@ export default function PokemonDetailPage() {
 
             <section className="detail-section">
               <div className="detail-section-heading">
-                <div><p className="detail-kicker">Where to find it</p><h2>Wild locations <span>{detail.encounterCount}</span></h2></div>
+                <div><p className="detail-kicker">Where to find it</p><h2>Wild locations <span>{encounterCount}</span></h2></div>
+                {encounterGames.length > 0 && (
+                  <label className="location-game-filter">
+                    <span className="visually-hidden">Filter locations by game</span>
+                    <select
+                      value={encounterGame}
+                      onChange={(event) => {
+                        setEncounterGame(event.target.value);
+                        setEncounterPage(0);
+                      }}
+                    >
+                      <option value="">All games</option>
+                      {encounterGames.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {formatIdentifier(group.name)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
-              {detail.encounters.length ? (
+              {encounterError && <p className="notice error" role="alert">{encounterError}</p>}
+              {encounterLoading ? (
+                <div className="detail-empty">Loading locations…</div>
+              ) : encounters.length ? (
                 <div className="detail-table-wrap">
                   <table className="detail-table location-table">
                     <thead><tr><th>Location</th><th>Game</th><th>Method</th><th>Levels</th><th>Chance</th></tr></thead>
                     <tbody>
-                      {detail.encounters.map((row, index) => (
-                        <tr key={`${row.version_group_id}-${row.location_name}-${row.method}-${index}`}>
+                      {encounters.map((row) => (
+                        <tr key={row.id}>
                           <td>{formatIdentifier(row.location_name)}</td>
                           <td>{row.version_group ? formatIdentifier(row.version_group.name) : "—"}</td>
                           <td>{row.method ? formatIdentifier(row.method) : "—"}</td>
@@ -450,9 +551,28 @@ export default function PokemonDetailPage() {
                       ))}
                     </tbody>
                   </table>
-                  {detail.encounterCount > detail.encounters.length && (
-                    <p className="detail-table-caption">Showing {detail.encounters.length} of {detail.encounterCount} location entries.</p>
-                  )}
+                  <div className="location-pagination">
+                    <button
+                      className="button secondary"
+                      disabled={encounterPage === 0}
+                      onClick={() => setEncounterPage((page) => Math.max(0, page - 1))}
+                      type="button"
+                    >
+                      Previous
+                    </button>
+                    <span>
+                      Page {encounterPage + 1} of {Math.max(1, Math.ceil(encounterCount / ENCOUNTER_PAGE_SIZE))}
+                      {" · "}Showing {encounters.length} of {encounterCount}
+                    </span>
+                    <button
+                      className="button secondary"
+                      disabled={(encounterPage + 1) * ENCOUNTER_PAGE_SIZE >= encounterCount}
+                      onClick={() => setEncounterPage((page) => page + 1)}
+                      type="button"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="detail-empty">No wild location data is available for this Pokémon.</div>
