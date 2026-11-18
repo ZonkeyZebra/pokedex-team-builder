@@ -222,7 +222,7 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 | Auth | Supabase Auth with email magic links |
 | API | Supabase auto-generated REST API via `supabase-js` |
 | Frontend | React + Vite *(planned)* |
-| Hosting | Static host such as Vercel, Netlify, Github Pages, or Cloudflare Pages |
+| Hosting | GitHub Pages with GitHub Actions |
 | Data source | PokeAPI CSV dump and sprite repository |
 | Seeding | Python 3 with `psycopg` |
 
@@ -236,7 +236,7 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 
 1. **Create a Supabase project** at [supabase.com](https://supabase.com).
 2. **Create the tables:** open the SQL editor and run `db/schema_postgres.sql`.
-3. **Configure email sign-in** in Authentication → Providers. Email should be enabled. In Authentication → URL Configuration, add your local app URL (`http://localhost:5173`) to the redirect URLs.
+3. **Configure email sign-in** in Authentication → Providers. Email should be enabled. In Authentication → URL Configuration, add `http://localhost:5173/**` to the redirect URLs.
 4. **Seed the reference data** from PowerShell (run from the repository root):
    ```powershell
    py -m venv .venv
@@ -259,6 +259,19 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 Re-seeding with `--reset` wipes the reference tables and also deletes any saved teams, so only use it before real users arrive.
 
 The starter app provides `/` for email-link sign-in, `/home` for navigation, `/pokedex` for searching and browsing default Pokémon forms, and `/team-builder` for creating teams and adding Pokémon. The team builder writes to the user-owned tables protected by the schema's RLS policies.
+
+### Deploy to GitHub Pages
+
+The repository includes a GitHub Actions workflow that builds and deploys the app when changes are pushed to `main`.
+
+1. In GitHub, open **Settings → Pages** and set the build source to **GitHub Actions**.
+2. Under **Settings → Secrets and variables → Actions → Variables**, add:
+   - `VITE_SUPABASE_URL`: your Supabase project URL.
+   - `VITE_SUPABASE_ANON_KEY`: your Supabase anon/publishable key. This key is designed to be public; never use the `service_role` key here.
+3. In Supabase, set the Auth **Site URL** to `https://zonkeyzebra.github.io/pokedex-team-builder/` and add that same URL to the allowed redirect URLs. Keep `http://localhost:5173/**` there for local development.
+4. Push to `main` or run the workflow manually from GitHub Actions. The deployed site will be at `https://zonkeyzebra.github.io/pokedex-team-builder/`.
+
+The build uses the repository subpath as its Vite base, configures React Router for that base, and emits a `404.html` fallback so refreshing a nested route (such as a Pokémon detail page) still loads the app. No database password or seed connection string belongs in GitHub Actions; the seed runs locally.
 
 ### Seed data notes
 - Names are stored as PokeAPI identifiers (`mr-mime`, `thunder-punch`); the frontend formats them for display.

@@ -18,7 +18,9 @@ export default function SignInPage({ authError }: { authError: string | null }) 
     try {
       const { error: signInError } = await supabase.auth.signInWithOtp({
         email: email.trim(),
-        options: { emailRedirectTo: window.location.origin },
+        options: {
+          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+        },
       });
 
       if (signInError) {
