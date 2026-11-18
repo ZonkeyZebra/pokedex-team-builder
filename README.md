@@ -2,7 +2,7 @@
 
 A public web app for browsing every Pokémon across all generations and building competitive teams. Pick a team of six, customize natures, EVs/IVs, items, and moves, then see how well it covers the type chart, what it is weak to, and how fast it is. Teams are saved to a cloud database, so they are still there when you come back.
 
-> **Status:** database schema and seed pipeline are done; the frontend has email-link sign-in, a home page, a searchable Pokédex with detail pages, and a starter team builder. See the [roadmap](#roadmap).
+> **Status:** database schema and seed pipeline are done; the frontend has email/password authentication, a home page, a searchable Pokédex with detail pages, and a starter team builder. See the [roadmap](#roadmap).
 
 ---
 
@@ -33,7 +33,7 @@ A public web app for browsing every Pokémon across all generations and building
 
 ### Saved data
 - Teams, favorites, and settings (such as default generation) stored per user
-- Email magic-link sign-in; saved teams are tied to the user's account
+- Email/password accounts with confirmation and password recovery; saved teams are tied to the user's account
 
 ---
 
@@ -64,7 +64,7 @@ flowchart LR
     end
 
     subgraph Supabase["Supabase"]
-        AUTH["Auth: email magic link"]
+        AUTH["Auth: email/password"]
         API["Auto-generated REST API"]
         DB[("Postgres with Row Level Security")]
         API --> DB
@@ -99,11 +99,9 @@ sequenceDiagram
     participant Auth as Supabase Auth
     participant DB as Postgres with RLS
 
-    U->>App: Enter email address
-    App->>Auth: Request magic link
-    Auth-->>U: Email sign-in link
-    U->>App: Open link
-    App->>Auth: Establish session
+    U->>App: Sign up or enter email and password
+    App->>Auth: Create account or authenticate
+    Auth-->>U: Email confirmation (if enabled)
     Auth-->>App: Session with JWT
     App->>DB: Load Pokémon, moves, types, natures, items
     DB-->>App: Public read-only reference data
@@ -219,9 +217,9 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 | Layer | Choice |
 |-------|--------|
 | Database | Postgres on Supabase (free tier) |
-| Auth | Supabase Auth with email magic links |
+| Auth | Supabase Auth with email/password, confirmation, and recovery |
 | API | Supabase auto-generated REST API via `supabase-js` |
-| Frontend | React + Vite *(planned)* |
+| Frontend | React + Vite |
 | Hosting | GitHub Pages with GitHub Actions |
 | Data source | PokeAPI CSV dump and sprite repository |
 | Seeding | Python 3 with `psycopg` |
@@ -236,7 +234,7 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 
 1. **Create a Supabase project** at [supabase.com](https://supabase.com).
 2. **Create the tables:** open the SQL editor and run `db/schema_postgres.sql`.
-3. **Configure email sign-in** in Authentication → Providers. Email should be enabled. In Authentication → URL Configuration, add `http://localhost:5173/**` to the redirect URLs.
+3. **Configure email/password auth** in Authentication → Providers → Email. Enable email/password sign-up and, preferably, email confirmation. The app requires passwords of at least 8 characters. In Authentication → URL Configuration, add `http://localhost:5173/**` to the redirect URLs; password recovery returns to `/reset-password`.
 4. **Seed the reference data** from PowerShell (run from the repository root):
    ```powershell
    py -m venv .venv
@@ -253,12 +251,17 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
    # Edit .env.local and set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
    npm install
    npm run dev
+   npm test
    ```
    Use Node.js 20.19+ or 22.12+. Use the project's URL and anon/publishable key from Supabase's API settings. Never put the `service_role` key in the frontend. The seed can also be previewed without a database URL using `py scripts\seed_pokedex.py --dry-run`.
 
+   Supabase's built-in email service has tight limits and is intended for testing. For confirmation and password-reset emails to regular users, configure a custom SMTP provider.
+
+   Users who already created an account with the previous email-link flow can use **Forgot password?** to set an initial password; their account ID and saved teams remain the same.
+
 Re-seeding with `--reset` wipes the reference tables and also deletes any saved teams, so only use it before real users arrive.
 
-The starter app provides `/` for email-link sign-in, `/home` for navigation, `/pokedex` for searching and browsing default Pokémon forms, and `/team-builder` for creating teams and adding Pokémon. The team builder writes to the user-owned tables protected by the schema's RLS policies.
+The app provides `/` for email/password sign-in and account creation, `/forgot-password` and `/reset-password` for account recovery, `/home` for navigation, `/pokedex` for searching and browsing default Pokémon forms, and `/team-builder` for creating teams and adding Pokémon. The team builder writes to the user-owned tables protected by the schema's RLS policies.
 
 ### Deploy to GitHub Pages
 
@@ -268,7 +271,7 @@ The repository includes a GitHub Actions workflow that builds and deploys the ap
 2. Under **Settings → Secrets and variables → Actions → Variables**, add:
    - `VITE_SUPABASE_URL`: your Supabase project URL.
    - `VITE_SUPABASE_ANON_KEY`: your Supabase anon/publishable key. This key is designed to be public; never use the `service_role` key here.
-3. In Supabase, set the Auth **Site URL** to `https://zonkeyzebra.github.io/pokedex-team-builder/` and add that same URL to the allowed redirect URLs. Keep `http://localhost:5173/**` there for local development.
+3. In Supabase, set the Auth **Site URL** to `https://zonkeyzebra.github.io/pokedex-team-builder/` and add `https://zonkeyzebra.github.io/pokedex-team-builder/**` to the allowed redirect URLs. Keep `http://localhost:5173/**` there for local development.
 4. Push to `main` or run the workflow manually from GitHub Actions. The deployed site will be at `https://zonkeyzebra.github.io/pokedex-team-builder/`.
 
 The build uses the repository subpath as its Vite base, configures React Router for that base, and emits a `404.html` fallback so refreshing a nested route (such as a Pokémon detail page) still loads the app. No database password or seed connection string belongs in GitHub Actions; the seed runs locally.
@@ -304,7 +307,7 @@ Estimated hours for the 30–40 hour project budget:
 | Milestone | Est. hours | Status |
 |-----------|-----------:|--------|
 | Database schema, RLS, seed pipeline | — | Done |
-| Frontend foundation, email sign-in, home, starter pages | — | Started |
+| Frontend foundation, email/password auth, home, starter pages | — | Started |
 | Pokédex list and detail pages (all generations) | 5–7 | Starter list and detail pages |
 | Basic team builder with live stats | 6–8 | Starter team creation and roster |
 | Saved teams, favorites, Showdown import/export | 3–4 | Not started |

@@ -2,12 +2,18 @@ import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./lib/auth";
 import { isSupabaseConfigured } from "./lib/supabase";
-import HomePage from "./pages/HomePage";
-import PokedexPage from "./pages/PokedexPage";
 import SignInPage from "./pages/SignInPage";
-import TeamBuilderPage from "./pages/TeamBuilderPage";
 
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
+const HomePage = lazy(() => import("./pages/HomePage"));
+const PokedexPage = lazy(() => import("./pages/PokedexPage"));
 const PokemonDetailPage = lazy(() => import("./pages/PokemonDetailPage"));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
+const TeamBuilderPage = lazy(() => import("./pages/TeamBuilderPage"));
+
+function PageLoading() {
+  return <main className="center-screen"><p className="muted">Loading page…</p></main>;
+}
 
 function AppLayout({ children }: { children: ReactNode }) {
   const { signOut, session } = useAuth();
@@ -70,6 +76,14 @@ function ProtectedRoutes() {
     return <main className="center-screen"><p className="muted">Checking your session…</p></main>;
   }
 
+  if (location.pathname === "/forgot-password") {
+    return <Suspense fallback={<PageLoading />}><ForgotPasswordPage /></Suspense>;
+  }
+
+  if (location.pathname === "/reset-password") {
+    return <Suspense fallback={<PageLoading />}><ResetPasswordPage /></Suspense>;
+  }
+
   if (!session) {
     if (location.pathname === "/") {
       return <SignInPage authError={error} />;
@@ -82,17 +96,17 @@ function ProtectedRoutes() {
   return (
     <AppLayout>
       <Routes>
-        <Route path="/home" element={<HomePage />} />
-        <Route path="/pokedex" element={<PokedexPage />} />
+        <Route path="/home" element={<Suspense fallback={<PageLoading />}><HomePage /></Suspense>} />
+        <Route path="/pokedex" element={<Suspense fallback={<PageLoading />}><PokedexPage /></Suspense>} />
         <Route
           path="/pokedex/:pokemonId"
           element={
-            <Suspense fallback={<main className="center-screen"><p className="muted">Loading Pokémon details…</p></main>}>
+            <Suspense fallback={<PageLoading />}>
               <PokemonDetailPage />
             </Suspense>
           }
         />
-        <Route path="/team-builder" element={<TeamBuilderPage />} />
+        <Route path="/team-builder" element={<Suspense fallback={<PageLoading />}><TeamBuilderPage /></Suspense>} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </AppLayout>
