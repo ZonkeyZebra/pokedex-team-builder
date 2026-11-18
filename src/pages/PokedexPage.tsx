@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { formatIdentifier } from "../lib/format";
 
@@ -131,7 +132,12 @@ export default function PokedexPage() {
         <>
           <section className="pokemon-grid" aria-label="Pokémon results">
             {pokemon.map((mon) => (
-              <article className="pokemon-card" key={mon.id}>
+              <Link
+                aria-label={`View ${formatIdentifier(mon.name)} details`}
+                className="pokemon-card"
+                key={mon.id}
+                to={`/pokedex/${mon.id}`}
+              >
                 <div className="pokemon-art">
                   <span className="dex-number">#{String(mon.dex_number).padStart(3, "0")}</span>
                   {mon.sprite_url && <img alt="" loading="lazy" src={mon.sprite_url} />}
@@ -148,7 +154,7 @@ export default function PokedexPage() {
                     <span>SPE <b>{mon.base_spe}</b></span>
                   </div>
                 </div>
-              </article>
+              </Link>
             ))}
           </section>
           <div className="pagination">

@@ -2,7 +2,7 @@
 
 A public web app for browsing every Pokémon across all generations and building competitive teams. Pick a team of six, customize natures, EVs/IVs, items, and moves, then see how well it covers the type chart, what it is weak to, and how fast it is. Teams are saved to a cloud database, so they are still there when you come back.
 
-> **Status:** database schema and seed pipeline are done; the frontend now has email-link sign-in, a home page, and starter Pokédex and team-builder pages. See the [roadmap](#roadmap).
+> **Status:** database schema and seed pipeline are done; the frontend has email-link sign-in, a home page, a searchable Pokédex with detail pages, and a starter team builder. See the [roadmap](#roadmap).
 
 ---
 
@@ -292,7 +292,7 @@ Estimated hours for the 30–40 hour project budget:
 |-----------|-----------:|--------|
 | Database schema, RLS, seed pipeline | — | Done |
 | Frontend foundation, email sign-in, home, starter pages | — | Started |
-| Pokédex list and detail pages (all generations) | 5–7 | Starter list page |
+| Pokédex list and detail pages (all generations) | 5–7 | Starter list and detail pages |
 | Basic team builder with live stats | 6–8 | Starter team creation and roster |
 | Saved teams, favorites, Showdown import/export | 3–4 | Not started |
 | Interactive type chart | 2–3 | Not started |

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./lib/auth";
 import { isSupabaseConfigured } from "./lib/supabase";
@@ -7,8 +7,11 @@ import PokedexPage from "./pages/PokedexPage";
 import SignInPage from "./pages/SignInPage";
 import TeamBuilderPage from "./pages/TeamBuilderPage";
 
+const PokemonDetailPage = lazy(() => import("./pages/PokemonDetailPage"));
+
 function AppLayout({ children }: { children: ReactNode }) {
   const { signOut, session } = useAuth();
+  const location = useLocation();
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
   async function handleSignOut() {
@@ -23,7 +26,7 @@ function AppLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${location.pathname.startsWith("/pokedex/") ? " detail-mode" : ""}`}>
       <header className="topbar">
         <Link className="brand" to="/home" aria-label="Pokédex home">
           <span className="brand-mark">P</span>
@@ -81,6 +84,14 @@ function ProtectedRoutes() {
       <Routes>
         <Route path="/home" element={<HomePage />} />
         <Route path="/pokedex" element={<PokedexPage />} />
+        <Route
+          path="/pokedex/:pokemonId"
+          element={
+            <Suspense fallback={<main className="center-screen"><p className="muted">Loading Pokémon details…</p></main>}>
+              <PokemonDetailPage />
+            </Suspense>
+          }
+        />
         <Route path="/team-builder" element={<TeamBuilderPage />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
