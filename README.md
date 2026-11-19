@@ -10,7 +10,8 @@ A public web app for browsing every Pokémon across all generations and building
 
 ### Pokédex (all generations)
 - Search and filter by name, type, and generation
-- Detail pages: artwork, description, types, abilities, base stats, and alternate forms
+- Detail pages: normal and shiny artwork/sprites, description, species data, types, abilities, base stats, evolution chains, and alternate forms
+- Defensive and offensive type-effectiveness matchups
 - Learnsets with a **generation/game selector** (level-up, TM, egg, and tutor moves)
 - Locations (where to find it) per game
 

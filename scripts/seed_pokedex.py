@@ -35,9 +35,12 @@ CSV_FILES = [
     "version_groups", "types", "type_efficacy", "abilities", "ability_prose",
     "natures", "items", "item_flags", "item_flag_map", "item_prose",
     "moves", "move_effect_prose", "pokemon", "pokemon_species",
-    "pokemon_species_flavor_text", "pokemon_stats", "pokemon_types",
+    "pokemon_species_flavor_text", "pokemon_species_names", "pokemon_stats", "pokemon_types",
     "pokemon_abilities", "pokemon_moves", "locations", "location_areas",
     "location_names", "encounters", "encounter_slots", "encounter_methods",
+    "pokemon_evolution", "evolution_triggers", "pokemon_egg_groups", "egg_groups",
+    "egg_group_prose", "growth_rates", "pokemon_habitats", "pokemon_habitat_names",
+    "pokemon_colors", "pokemon_color_names", "pokemon_shapes", "pokemon_shape_prose",
 ]
 
 # Learnsets are collapsed to one row per generation. These version groups are
@@ -66,6 +69,10 @@ def clean_text(text, effect_chance=None):
         text = text.replace("$effect_chance", str(effect_chance))
     text = text.replace("\u00ad\n", "").replace("\u00ad", "")  # soft hyphens
     return re.sub(r"\s+", " ", text).strip() or None
+
+
+def format_identifier(value):
+    return str(value).replace("-", " ").title()
 
 
 class Source:
@@ -156,6 +163,27 @@ def build_moves(src, type_ids):
 
 def build_pokemon(src):
     species = {r["id"]: r for r in src.read("pokemon_species")}
+    species_names = {
+        r["pokemon_species_id"]: r
+        for r in src.read("pokemon_species_names")
+        if r["local_language_id"] == ENGLISH
+    }
+    growth_rates = {r["id"]: r["identifier"] for r in src.read("growth_rates")}
+    habitats = {
+        r["pokemon_habitat_id"]: r["name"]
+        for r in src.read("pokemon_habitat_names")
+        if r["local_language_id"] == ENGLISH
+    }
+    colors = {
+        r["pokemon_color_id"]: r["name"]
+        for r in src.read("pokemon_color_names")
+        if r["local_language_id"] == ENGLISH
+    }
+    shapes = {
+        r["pokemon_shape_id"]: r["name"]
+        for r in src.read("pokemon_shape_prose")
+        if r["local_language_id"] == ENGLISH
+    }
 
     flavor = {}  # species_id -> (version_id, text), keeping the newest English entry
     for r in src.read("pokemon_species_flavor_text"):
@@ -182,13 +210,22 @@ def build_pokemon(src):
             name = r["identifier"]
             form = name[len(prefix):] if name.startswith(prefix) else name
         text = flavor.get(r["species_id"], (0, None))[1]
+        species_name = species_names.get(r["species_id"], {})
         rows.append((
-            int(r["id"]), int(r["species_id"]), name, form, is_default,
+            int(r["id"]), int(r["species_id"]), int(r["species_id"]), int(sp["evolution_chain_id"]),
+            name, form, is_default,
             int(sp["generation_id"]), num(r["height"]), num(r["weight"]),
             st["1"], st["2"], st["3"], st["4"], st["5"], st["6"],
             f"{SPRITE_BASE}/pokemon/{r['id']}.png",
             f"{SPRITE_BASE}/pokemon/other/official-artwork/{r['id']}.png",
+            f"{SPRITE_BASE}/pokemon/shiny/{r['id']}.png",
+            f"{SPRITE_BASE}/pokemon/other/official-artwork/shiny/{r['id']}.png",
             clean_text(text),
+            num(sp["capture_rate"]), num(sp["base_happiness"]), num(sp["hatch_counter"]),
+            num(sp["gender_rate"]), growth_rates.get(sp["growth_rate_id"]),
+            colors.get(sp["color_id"]), shapes.get(sp["shape_id"]), habitats.get(sp["habitat_id"]),
+            species_name.get("genus") or None,
+            sp["is_baby"] == "1", sp["is_legendary"] == "1", sp["is_mythical"] == "1",
         ))
     return rows
 
@@ -198,6 +235,81 @@ def build_pokemon_types(src, pokemon_ids, type_ids):
             for r in src.read("pokemon_types")
             if int(r["pokemon_id"]) in pokemon_ids and int(r["type_id"]) in type_ids]
 
+
+def build_egg_groups(src):
+    names = {
+        r["egg_group_id"]: r["name"]
+        for r in src.read("egg_group_prose")
+        if r["local_language_id"] == ENGLISH
+    }
+    groups = [(int(r["id"]), names.get(r["id"], r["identifier"]))
+              for r in src.read("egg_groups")]
+    links = [(int(r["species_id"]), int(r["egg_group_id"]))
+             for r in src.read("pokemon_egg_groups")]
+    return groups, links
+
+
+def build_evolutions(src):
+    species = {r["id"]: r for r in src.read("pokemon_species")}
+    triggers = {r["id"]: r["identifier"] for r in src.read("evolution_triggers")}
+    items = {r["id"]: r["identifier"] for r in src.read("items")}
+    locations = {r["id"]: r["identifier"] for r in src.read("locations")}
+    loc_names = {
+        r["location_id"]: r["name"]
+        for r in src.read("location_names")
+        if r["local_language_id"] == ENGLISH
+    }
+    gender_names = {"1": "female", "2": "male"}
+    rows = []
+
+    for r in src.read("pokemon_evolution"):
+        to_id = int(r["evolved_species_id"])
+        species_row = species.get(str(to_id))
+        if species_row is None:
+            continue
+        chain_id = int(species_row["evolution_chain_id"])
+        from_id = num(species_row["evolves_from_species_id"])
+        trigger = triggers.get(r["evolution_trigger_id"], r["evolution_trigger_id"])
+        trigger_item = items.get(r["trigger_item_id"]) if r["trigger_item_id"] else None
+        location = loc_names.get(r["location_id"]) or locations.get(r["location_id"])
+        gender = gender_names.get(r["gender_id"])
+        details = []
+        if r["minimum_level"]:
+            details.append(f"Level {r['minimum_level']}")
+        if trigger_item:
+            details.append(f"Use {format_identifier(trigger_item)}")
+        if r["held_item_id"]:
+            details.append(f"Hold {format_identifier(items.get(r['held_item_id'], r['held_item_id']))}")
+        if r["minimum_happiness"]:
+            details.append(f"Happiness {r['minimum_happiness']}")
+        if r["minimum_affection"]:
+            details.append(f"Affection {r['minimum_affection']}")
+        if r["minimum_beauty"]:
+            details.append(f"Beauty {r['minimum_beauty']}")
+        if r["time_of_day"]:
+            details.append(f"{format_identifier(r['time_of_day'])} time")
+        if gender:
+            details.append(f"{gender.title()} only")
+        if r["trade_species_id"]:
+            details.append("Trade")
+        if r["needs_overworld_rain"] == "1":
+            details.append("While raining")
+        if r["turn_upside_down"] == "1":
+            details.append("Console held upside down")
+
+        rows.append((
+            chain_id, from_id, to_id, trigger, trigger_item,
+            num(r["minimum_level"]), num(r["minimum_happiness"]), num(r["minimum_beauty"]),
+            num(r["minimum_affection"]), gender, r["time_of_day"] or None,
+            None,
+            items.get(r["held_item_id"]) if r["held_item_id"] else None,
+            location,
+            num(r["trade_species_id"]),
+            r["needs_overworld_rain"] == "1",
+            r["turn_upside_down"] == "1",
+            "; ".join(details) or format_identifier(trigger),
+        ))
+    return rows
 
 def build_pokemon_abilities(src, pokemon_ids, ability_ids):
     return [(int(r["pokemon_id"]), int(r["ability_id"]), int(r["slot"]), r["is_hidden"] == "1")
@@ -267,6 +379,90 @@ def load(database_url, tables, reset):
     import psycopg  # imported here so --dry-run works without it installed
 
     with psycopg.connect(database_url) as conn, conn.cursor() as cur:
+        cur.execute("""
+            ALTER TABLE pokemon
+                ADD COLUMN IF NOT EXISTS species_id integer,
+                ADD COLUMN IF NOT EXISTS evolution_chain_id integer,
+                ADD COLUMN IF NOT EXISTS shiny_sprite_url text,
+                ADD COLUMN IF NOT EXISTS shiny_artwork_url text,
+                ADD COLUMN IF NOT EXISTS capture_rate integer,
+                ADD COLUMN IF NOT EXISTS base_happiness integer,
+                ADD COLUMN IF NOT EXISTS hatch_counter integer,
+                ADD COLUMN IF NOT EXISTS gender_rate integer,
+                ADD COLUMN IF NOT EXISTS growth_rate text,
+                ADD COLUMN IF NOT EXISTS color text,
+                ADD COLUMN IF NOT EXISTS shape text,
+                ADD COLUMN IF NOT EXISTS habitat text,
+                ADD COLUMN IF NOT EXISTS genus text,
+                ADD COLUMN IF NOT EXISTS is_baby boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS is_legendary boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS is_mythical boolean NOT NULL DEFAULT false
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS egg_group (
+                id integer PRIMARY KEY,
+                name text NOT NULL UNIQUE
+            );
+            CREATE TABLE IF NOT EXISTS pokemon_egg_group (
+                species_id integer NOT NULL,
+                egg_group_id integer NOT NULL REFERENCES egg_group(id),
+                PRIMARY KEY (species_id, egg_group_id)
+            );
+            CREATE TABLE IF NOT EXISTS pokemon_evolution (
+                evolution_chain_id integer NOT NULL,
+                from_species_id integer,
+                to_species_id integer NOT NULL,
+                trigger text NOT NULL,
+                trigger_item text,
+                minimum_level integer,
+                minimum_happiness integer,
+                minimum_beauty integer,
+                minimum_affection integer,
+                gender text,
+                time_of_day text,
+                known_move text,
+                held_item text,
+                location text,
+                trade_species_id integer,
+                needs_overworld_rain boolean NOT NULL DEFAULT false,
+                turn_upside_down boolean NOT NULL DEFAULT false,
+                details text
+            );
+            CREATE INDEX IF NOT EXISTS idx_pokemon_species ON pokemon (species_id);
+            CREATE INDEX IF NOT EXISTS idx_pokemon_evolution_chain ON pokemon_evolution (evolution_chain_id);
+            ALTER TABLE egg_group ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE pokemon_egg_group ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE pokemon_evolution ENABLE ROW LEVEL SECURITY
+        """)
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_policies
+                    WHERE schemaname = 'public' AND tablename = 'egg_group'
+                      AND policyname = 'public read'
+                ) THEN
+                    CREATE POLICY "public read" ON egg_group
+                    FOR SELECT TO anon, authenticated USING (true);
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_policies
+                    WHERE schemaname = 'public' AND tablename = 'pokemon_egg_group'
+                      AND policyname = 'public read'
+                ) THEN
+                    CREATE POLICY "public read" ON pokemon_egg_group
+                    FOR SELECT TO anon, authenticated USING (true);
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_policies
+                    WHERE schemaname = 'public' AND tablename = 'pokemon_evolution'
+                      AND policyname = 'public read'
+                ) THEN
+                    CREATE POLICY "public read" ON pokemon_evolution
+                    FOR SELECT TO anon, authenticated USING (true);
+                END IF;
+            END $$;
+        """)
         if reset:
             names = ", ".join(t[0] for t in tables)
             cur.execute(f"TRUNCATE {names} RESTART IDENTITY CASCADE")
@@ -328,6 +524,8 @@ def main():
     pokemon_abilities = build_pokemon_abilities(src, pokemon_ids, {a[0] for a in abilities})
     pokemon_moves = build_pokemon_moves(src, vg_generation, pokemon_ids, move_ids)
     encounters = build_encounters(src, pokemon_ids)
+    egg_groups, pokemon_egg_groups = build_egg_groups(src)
+    pokemon_evolutions = build_evolutions(src)
 
     # Load order respects foreign keys.
     tables = [
@@ -339,9 +537,19 @@ def main():
         ("item", ["id", "name", "description", "sprite_url"], items),
         ("move", ["id", "name", "type_id", "damage_class", "power", "accuracy", "pp",
                   "priority", "description"], moves),
-        ("pokemon", ["id", "dex_number", "name", "form_name", "is_default", "generation",
-                     "height_dm", "weight_hg", "base_hp", "base_atk", "base_def", "base_spa",
-                     "base_spd", "base_spe", "sprite_url", "artwork_url", "description"], pokemon),
+        ("pokemon", ["id", "dex_number", "species_id", "evolution_chain_id", "name", "form_name",
+                     "is_default", "generation", "height_dm", "weight_hg", "base_hp", "base_atk",
+                     "base_def", "base_spa", "base_spd", "base_spe", "sprite_url", "artwork_url",
+                     "shiny_sprite_url", "shiny_artwork_url", "description", "capture_rate",
+                     "base_happiness", "hatch_counter", "gender_rate", "growth_rate", "color",
+                     "shape", "habitat", "genus", "is_baby", "is_legendary", "is_mythical"], pokemon),
+        ("egg_group", ["id", "name"], egg_groups),
+        ("pokemon_egg_group", ["species_id", "egg_group_id"], pokemon_egg_groups),
+        ("pokemon_evolution", ["evolution_chain_id", "from_species_id", "to_species_id",
+                               "trigger", "trigger_item", "minimum_level", "minimum_happiness",
+                               "minimum_beauty", "minimum_affection", "gender", "time_of_day",
+                               "known_move", "held_item", "location", "trade_species_id",
+                               "needs_overworld_rain", "turn_upside_down", "details"], pokemon_evolutions),
         ("pokemon_type", ["pokemon_id", "type_id", "slot"], pokemon_types),
         ("pokemon_ability", ["pokemon_id", "ability_id", "slot", "is_hidden"], pokemon_abilities),
         ("pokemon_move", ["pokemon_id", "move_id", "generation", "learn_method",

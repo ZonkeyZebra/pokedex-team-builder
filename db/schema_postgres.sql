@@ -31,6 +31,8 @@ CREATE TABLE type_effectiveness (
 CREATE TABLE pokemon (
     id            integer PRIMARY KEY,   -- PokeAPI id (alternate forms get their own row)
     dex_number    integer NOT NULL,
+    species_id    integer,
+    evolution_chain_id integer,
     name          text NOT NULL,
     form_name     text,                  -- NULL for the default form
     is_default    boolean NOT NULL DEFAULT true,
@@ -45,11 +47,59 @@ CREATE TABLE pokemon (
     base_spe      integer NOT NULL,
     sprite_url    text,
     artwork_url   text,
-    description   text                   -- Pokedex flavor text
+    shiny_sprite_url  text,
+    shiny_artwork_url text,
+    description   text,                  -- Pokedex flavor text
+    capture_rate  integer,
+    base_happiness integer,
+    hatch_counter integer,
+    gender_rate   integer,
+    growth_rate   text,
+    color         text,
+    shape         text,
+    habitat       text,
+    genus         text,
+    is_baby       boolean NOT NULL DEFAULT false,
+    is_legendary  boolean NOT NULL DEFAULT false,
+    is_mythical   boolean NOT NULL DEFAULT false
 );
 CREATE INDEX idx_pokemon_name ON pokemon (name);
 CREATE INDEX idx_pokemon_dex  ON pokemon (dex_number);
 CREATE INDEX idx_pokemon_gen  ON pokemon (generation);
+CREATE INDEX idx_pokemon_species ON pokemon (species_id);
+
+CREATE TABLE egg_group (
+    id    integer PRIMARY KEY,
+    name  text NOT NULL UNIQUE
+);
+
+CREATE TABLE pokemon_egg_group (
+    species_id  integer NOT NULL,
+    egg_group_id integer NOT NULL REFERENCES egg_group(id),
+    PRIMARY KEY (species_id, egg_group_id)
+);
+
+CREATE TABLE pokemon_evolution (
+    evolution_chain_id integer NOT NULL,
+    from_species_id integer,
+    to_species_id integer NOT NULL,
+    trigger text NOT NULL,
+    trigger_item text,
+    minimum_level integer,
+    minimum_happiness integer,
+    minimum_beauty integer,
+    minimum_affection integer,
+    gender text,
+    time_of_day text,
+    known_move text,
+    held_item text,
+    location text,
+    trade_species_id integer,
+    needs_overworld_rain boolean NOT NULL DEFAULT false,
+    turn_upside_down boolean NOT NULL DEFAULT false,
+    details text
+);
+CREATE INDEX idx_pokemon_evolution_chain ON pokemon_evolution (evolution_chain_id);
 
 CREATE TABLE pokemon_type (
     pokemon_id  integer NOT NULL REFERENCES pokemon(id) ON DELETE CASCADE,
@@ -223,7 +273,7 @@ BEGIN
     FOREACH t IN ARRAY ARRAY[
         'version_group', 'type', 'type_effectiveness', 'pokemon', 'pokemon_type',
         'ability', 'pokemon_ability', 'move', 'pokemon_move', 'encounter',
-        'nature', 'item'
+        'nature', 'item', 'egg_group', 'pokemon_egg_group', 'pokemon_evolution'
     ] LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
         EXECUTE format(
