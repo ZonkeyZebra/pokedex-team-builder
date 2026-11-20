@@ -10,6 +10,7 @@ Usage:
     python seed_pokedex.py --dry-run     # download + transform, print row counts, no database
     python seed_pokedex.py               # load into an EMPTY database (refuses otherwise)
     python seed_pokedex.py --reset       # wipe reference tables first (also deletes saved teams!)
+    python seed_pokedex.py --update-form-descriptions  # update only curated form descriptions
 
 Notes:
   * Use the connection string from Supabase's "Connect" dialog. If your network
@@ -18,6 +19,8 @@ Notes:
     so it can write to the read-only reference tables.
   * Names are stored as PokeAPI identifiers ("mr-mime", "thunder-punch").
     Prettify them in the frontend: name.replace("-", " ") and title-case.
+  * PokeAPI flavor text is species-level. Add hand-curated overrides by Pokemon
+    resource ID to data/pokemon_form_descriptions.csv when a form needs its own text.
 """
 import argparse
 import csv
@@ -93,6 +96,48 @@ class Source:
             yield from csv.DictReader(f)
 
 
+def load_form_descriptions(path, pokemon_ids=None):
+    descriptions = {}
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames != ["pokemon_id", "description"]:
+            raise ValueError(
+                f"{path} must have exactly these columns: pokemon_id,description"
+            )
+        for line_number, row in enumerate(reader, start=2):
+            try:
+                pokemon_id = int(row["pokemon_id"])
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"{path}:{line_number}: invalid pokemon_id") from error
+            description = (row["description"] or "").strip()
+            if not description:
+                raise ValueError(f"{path}:{line_number}: description must not be empty")
+            if pokemon_ids is not None and pokemon_id not in pokemon_ids:
+                raise ValueError(
+                    f"{path}:{line_number}: Pokemon id {pokemon_id} is not in the PokeAPI data"
+                )
+            if pokemon_id in descriptions:
+                raise ValueError(f"{path}:{line_number}: duplicate Pokemon id {pokemon_id}")
+            descriptions[pokemon_id] = description
+    return descriptions
+
+
+def update_form_descriptions(database_url, descriptions):
+    import psycopg
+
+    with psycopg.connect(database_url) as conn, conn.cursor() as cur:
+        for pokemon_id, description in descriptions.items():
+            cur.execute(
+                "UPDATE pokemon SET description = %s WHERE id = %s",
+                (clean_text(description), pokemon_id),
+            )
+            if cur.rowcount != 1:
+                raise ValueError(
+                    f"Expected one Pokémon row for id {pokemon_id}; updated {cur.rowcount}"
+                )
+    print(f"Updated descriptions for {len(descriptions)} Pokémon forms.")
+
+
 # ---------------------------------------------------------------- builders
 # Each returns a list of tuples in the column order used by TABLES below.
 
@@ -161,7 +206,8 @@ def build_moves(src, type_ids):
     return rows
 
 
-def build_pokemon(src):
+def build_pokemon(src, form_descriptions=None):
+    form_descriptions = form_descriptions or {}
     species = {r["id"]: r for r in src.read("pokemon_species")}
     species_names = {
         r["pokemon_species_id"]: r
@@ -220,7 +266,7 @@ def build_pokemon(src):
             f"{SPRITE_BASE}/pokemon/other/official-artwork/{r['id']}.png",
             f"{SPRITE_BASE}/pokemon/shiny/{r['id']}.png",
             f"{SPRITE_BASE}/pokemon/other/official-artwork/shiny/{r['id']}.png",
-            clean_text(text),
+            clean_text(form_descriptions.get(int(r["id"]), text)),
             num(sp["capture_rate"]), num(sp["base_happiness"]), num(sp["hatch_counter"]),
             num(sp["gender_rate"]), growth_rates.get(sp["growth_rate_id"]),
             colors.get(sp["color_id"]), shapes.get(sp["shape_id"]), habitats.get(sp["habitat_id"]),
@@ -498,8 +544,29 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="transform only; do not touch the database")
     ap.add_argument("--reset", action="store_true", help="truncate reference tables (cascades to saved teams)")
     ap.add_argument("--cache-dir", default="pokeapi_csv", help="where CSVs are cached (default: ./pokeapi_csv)")
+    ap.add_argument(
+        "--form-descriptions",
+        default="data/pokemon_form_descriptions.csv",
+        help="CSV of curated per-form descriptions (default: data/pokemon_form_descriptions.csv)",
+    )
+    ap.add_argument(
+        "--update-form-descriptions",
+        action="store_true",
+        help="update only curated descriptions in an already seeded database",
+    )
     ap.add_argument("--database-url", default=os.environ.get("DATABASE_URL"))
     args = ap.parse_args()
+
+    if args.update_form_descriptions:
+        if args.reset or args.dry_run:
+            ap.error("--update-form-descriptions cannot be combined with --reset or --dry-run")
+        if not args.database_url:
+            sys.exit("Set DATABASE_URL (or pass --database-url) to update form descriptions.")
+        form_descriptions = load_form_descriptions(args.form_descriptions)
+        if not form_descriptions:
+            sys.exit(f"No descriptions found in {args.form_descriptions}.")
+        update_form_descriptions(args.database_url, form_descriptions)
+        return
 
     if not args.dry_run and not args.database_url:
         sys.exit("Set DATABASE_URL (or pass --database-url), or use --dry-run.")
@@ -509,6 +576,11 @@ def main():
     src.download()
 
     print("Transforming...")
+    source_pokemon_ids = {int(r["id"]) for r in src.read("pokemon")}
+    form_descriptions = load_form_descriptions(args.form_descriptions, source_pokemon_ids)
+    print(f"  curated form descriptions {len(form_descriptions):>8,} rows")
+    if len(form_descriptions) < len(source_pokemon_ids):
+        print("  forms without overrides use their shared species flavor text")
     version_groups, vg_generation = build_version_groups(src)
     types = build_types(src)
     type_ids = {t[0] for t in types}
@@ -517,8 +589,14 @@ def main():
     natures = build_natures(src)
     items = build_items(src)
     moves = build_moves(src, type_ids)
-    pokemon = build_pokemon(src)
+    pokemon = build_pokemon(src, form_descriptions)
     pokemon_ids = {p[0] for p in pokemon}
+    missing_description_ids = set(form_descriptions) - pokemon_ids
+    if missing_description_ids:
+        raise ValueError(
+            "Form descriptions reference Pokémon rows excluded from the seed: "
+            + ", ".join(map(str, sorted(missing_description_ids)))
+        )
     move_ids = {m[0] for m in moves}
     pokemon_types = build_pokemon_types(src, pokemon_ids, type_ids)
     pokemon_abilities = build_pokemon_abilities(src, pokemon_ids, {a[0] for a in abilities})

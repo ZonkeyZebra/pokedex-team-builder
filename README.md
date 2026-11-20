@@ -225,6 +225,43 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 | Data source | PokeAPI CSV dump and sprite repository |
 | Seeding | Python 3 with `psycopg` |
 
+### Form-specific Pokédex descriptions
+
+PokeAPI's `pokemon_species_flavor_text.csv` contains descriptions per species, not per form. Since regular and Alolan Ninetales share a species, the default seed data uses the same species description for both.
+
+Get information from script with the following commands:
+```powershell
+python list_alternate_forms.py                     # summary + full table
+python list_alternate_forms.py --summary           # category counts only
+python list_alternate_forms.py --category alolan   # one category
+python list_alternate_forms.py --species raichu    # one species
+python list_alternate_forms.py --csv forms.csv     # also export to CSV
+```
+
+To provide an independently curated description for a form, add its PokeAPI Pokémon resource ID and description to `data/pokemon_form_descriptions.csv`:
+
+```csv
+pokemon_id,description
+<form-pokemon-id>,"Your approved form-specific description."
+```
+
+Find a form's ID in Supabase with:
+
+```sql
+SELECT id, name, form_name
+FROM pokemon
+WHERE name ILIKE '%ninetales%'
+ORDER BY id;
+```
+
+The override applies only to that Pokémon/form ID; other forms continue to use the species flavor text. To update descriptions in an already seeded database without resetting teams or other data, set `DATABASE_URL` and run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\seed_pokedex.py --update-form-descriptions
+```
+
+For a fresh seed, the same CSV overrides are applied automatically. Use descriptions you have permission to reproduce; PokeAPI does not supply separate form descriptions.
+
 
 ---
 
@@ -234,6 +271,8 @@ STAB is 1.5 and a critical hit is 1.5. Abilities, items, weather, and terrain ar
 .
 ├── db/
 │   └── schema_postgres.sql      # tables, constraints, RLS policies
+├── data/
+│   └── pokemon_form_descriptions.csv # optional curated form-specific flavor text
 ├── scripts/
 │   └── seed_pokedex.py          # PokeAPI CSV -> Supabase Postgres
 ├── src/

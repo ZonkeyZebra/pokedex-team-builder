@@ -6,3 +6,4 @@ dist/
 .venv/
 __pycache__/
 pokeapi_csv/
+bulbapedia_cache/
