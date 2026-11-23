@@ -2,6 +2,8 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { formatIdentifier } from "../lib/format";
 import { supabase } from "../lib/supabase";
+import EvolutionChain from "../components/EvolutionChain";
+import { groupFormsBySpecies, type EvolutionForm } from "../lib/evolutionForms";
 
 type Pokemon = {
   id: number;
@@ -72,10 +74,12 @@ type EncounterDetail = Encounter & { version_group: VersionGroup | null };
 type Matchup = { name: string; multiplier: number };
 type PokemonForm = Pick<Pokemon, "id" | "name" | "form_name" | "is_default" | "sprite_url" | "shiny_sprite_url">;
 type EggGroup = { id: number; name: string };
-type EvolutionSpecies = { id: number; species_id: number; name: string; sprite_url: string | null };
+// type EvolutionSpecies = { id: number; species_id: number; name: string; sprite_url: string | null };
 type Evolution = {
   from_species_id: number | null;
   to_species_id: number;
+  from_pokemon_id: number | null;
+  to_pokemon_id: number | null;
   trigger: string;
   trigger_item: string | null;
   minimum_level: number | null;
@@ -101,7 +105,7 @@ type PokemonDetail = {
   forms: PokemonForm[];
   eggGroups: EggGroup[];
   evolutions: Evolution[];
-  evolutionSpecies: Record<number, EvolutionSpecies>;
+  evolutionForms: Record<number, EvolutionForm[]>;
 };
 
 type TabId = "overview" | "moves" | "locations" | "species";
@@ -151,39 +155,6 @@ function learnMethodLabel(method: string) {
 
 function formLabel(form: PokemonForm) {
   return form.is_default ? "Default" : formatIdentifier(form.form_name ?? form.name);
-}
-
-function evolutionStages(evolutions: Evolution[]) {
-  const toIds = new Set(evolutions.map((evolution) => evolution.to_species_id));
-  const fromIds = new Set(
-    evolutions
-      .map((evolution) => evolution.from_species_id)
-      .filter((speciesId): speciesId is number => speciesId !== null),
-  );
-  let current = [...new Set([...fromIds].filter((speciesId) => !toIds.has(speciesId)))];
-  if (!current.length) {
-    current = [...new Set(
-      evolutions.map((evolution) => evolution.from_species_id).filter(
-        (speciesId): speciesId is number => speciesId !== null,
-      ),
-    )];
-  }
-
-  const stages: number[][] = [];
-  const visited = new Set<number>();
-  while (current.length) {
-    stages.push(current);
-    current.forEach((speciesId) => visited.add(speciesId));
-    const next = [...new Set(
-      evolutions
-        .filter((evolution) => evolution.from_species_id !== null
-          && current.includes(evolution.from_species_id))
-        .map((evolution) => evolution.to_species_id)
-        .filter((speciesId) => !visited.has(speciesId)),
-    )];
-    current = next;
-  }
-  return stages;
 }
 
 function MatchupList({ matchups }: { matchups: Matchup[] }) {
@@ -263,7 +234,7 @@ export default function PokemonDetailPage() {
             supabase!.from("pokemon").select("id,name,form_name,is_default,sprite_url,shiny_sprite_url").eq("species_id", pokemon.species_id).order("id"),
             supabase!.from("pokemon_egg_group").select("egg_group_id").eq("species_id", pokemon.species_id),
             pokemon.evolution_chain_id
-              ? supabase!.from("pokemon_evolution").select("from_species_id,to_species_id,trigger,trigger_item,minimum_level,minimum_happiness,minimum_beauty,minimum_affection,gender,time_of_day,held_item,location,trade_species_id,needs_overworld_rain,turn_upside_down,details").eq("evolution_chain_id", pokemon.evolution_chain_id)
+              ? supabase!.from("pokemon_evolution").select("from_species_id,to_species_id,from_pokemon_id,to_pokemon_id,trigger,trigger_item,minimum_level,minimum_happiness,minimum_beauty,minimum_affection,gender,time_of_day,held_item,location,trade_species_id,needs_overworld_rain,turn_upside_down,details").eq("evolution_chain_id", pokemon.evolution_chain_id)
               : Promise.resolve({ data: [], error: null }),
           ]);
 
@@ -389,17 +360,16 @@ export default function PokemonDetailPage() {
             evolution.to_species_id,
           ].filter((speciesId): speciesId is number => speciesId !== null)),
         )];
-        const evolutionSpecies: Record<number, EvolutionSpecies> = {};
+
+        let evolutionForms: Record<number, EvolutionForm[]> = {};
         if (evolutionSpeciesIds.length) {
-          const { data: speciesRows, error: speciesError } = await supabase!
+          const { data: formRows, error: formsError } = await supabase!
             .from("pokemon")
-            .select("id,species_id,name,sprite_url")
-            .eq("is_default", true)
-            .in("species_id", evolutionSpeciesIds);
-          if (speciesError) throw speciesError;
-          for (const row of (speciesRows ?? []) as EvolutionSpecies[]) {
-            evolutionSpecies[row.species_id] = row;
-          }
+            .select("id,species_id,name,form_name,is_default,sprite_url,shiny_sprite_url")
+            .in("species_id", evolutionSpeciesIds)
+            .order("id");
+          if (formsError) throw formsError;
+          evolutionForms = groupFormsBySpecies((formRows ?? []) as EvolutionForm[]);
         }
         if (!active) return;
         setDetail({
@@ -417,7 +387,7 @@ export default function PokemonDetailPage() {
           forms,
           eggGroups,
           evolutions,
-          evolutionSpecies,
+          evolutionForms,
         });
       } catch (requestError) {
         if (active) setError(getErrorMessage(requestError));
@@ -651,7 +621,7 @@ export default function PokemonDetailPage() {
                 {!pokemon.is_default && (
                   <p className="pd-banner">
                     <strong>Viewing the {formatIdentifier(pokemon.form_name ?? pokemon.name)} form.</strong>{" "}
-                    Stats, types and abilities reflect this form. Evolution is shared by every form.
+                    Stats, types, abilities and matchups reflect this form.
                   </p>
                 )}
               </header>
@@ -695,45 +665,12 @@ export default function PokemonDetailPage() {
                   <section className="pd-section">
                     <h2>Evolution</h2>
                     {detail.evolutions.length ? (
-                      <div className="pd-evo">
-                        {evolutionStages(detail.evolutions).map((stage, stageIndex) => (
-                          <div className="pd-evo-group" key={stageIndex}>
-                            {stageIndex > 0 && <span aria-hidden="true" className="pd-evo-arrow">→</span>}
-                            <div className="pd-evo-stage">
-                              {stage.map((speciesId) => {
-                                const species = detail.evolutionSpecies[speciesId];
-                                const evolution = detail.evolutions.find((entry) => entry.to_species_id === speciesId);
-                                const isCurrent = speciesId === pokemon.species_id;
-                                const name = species?.name ?? (isCurrent ? pokemon.name : undefined);
-                                const label = name ? formatIdentifier(name) : `Species ${speciesId}`;
-                                const content = (
-                                  <>
-                                    {species?.sprite_url
-                                      ? <img alt="" src={species.sprite_url} />
-                                      : <span aria-hidden="true" className="pd-evo-placeholder">?</span>}
-                                    <strong>{label}</strong>
-                                    <small>#{String(speciesId).padStart(4, "0")}</small>
-                                    {stageIndex > 0 && evolution && (
-                                      <span className="pd-evo-method">{evolution.details ?? formatIdentifier(evolution.trigger)}</span>
-                                    )}
-                                  </>
-                                );
-                                return species ? (
-                                  <Link
-                                    aria-current={isCurrent ? "page" : undefined}
-                                    aria-label={`View ${label}`}
-                                    className={`pd-evo-card${isCurrent ? " current" : ""}`}
-                                    key={speciesId}
-                                    to={`/pokedex/${species.id}`}
-                                  >{content}</Link>
-                                ) : (
-                                  <div className={`pd-evo-card${isCurrent ? " current" : ""}`} key={speciesId}>{content}</div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <EvolutionChain
+                        current={pokemon}
+                        evolutions={detail.evolutions}
+                        formsBySpecies={detail.evolutionForms}
+                        shiny={shiny}
+                      />
                     ) : (
                       <div className="detail-empty">This Pokémon does not evolve.</div>
                     )}

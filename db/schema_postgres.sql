@@ -97,7 +97,9 @@ CREATE TABLE pokemon_evolution (
     trade_species_id integer,
     needs_overworld_rain boolean NOT NULL DEFAULT false,
     turn_upside_down boolean NOT NULL DEFAULT false,
-    details text
+    details text,
+    from_pokemon_id integer,
+    to_pokemon_id integer
 );
 CREATE INDEX idx_pokemon_evolution_chain ON pokemon_evolution (evolution_chain_id);
 

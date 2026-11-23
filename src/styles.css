@@ -2492,3 +2492,78 @@ a.pd-evo-card:hover {
     content: attr(data-label) " ";
   }
 }
+
+/* ---------- Evolution: form-aware lineages ----------
+   Append this to the END of src/styles.css. */
+
+.pd-evo-lineage {
+  margin-bottom: 20px;
+}
+
+.pd-evo-heading {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-family: "DM Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.pd-evo-lineage.current .pd-evo-heading {
+  color: var(--accent);
+}
+
+.pd-evo-form {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+/* "Other forms in this family" disclosure */
+.pd-evo-more {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.pd-evo-more summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pd-evo-more summary:hover {
+  color: var(--ink);
+}
+
+.pd-evo-more[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.pd-evo-more-body {
+  display: grid;
+  gap: 16px;
+  padding: 14px 16px 16px;
+}
+
+.pd-evo-more-body h3 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-family: "DM Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+/* The phone rule turns .pd-forms into a scrolling row; inside the disclosure it should wrap */
+.pd-evo-more .pd-forms {
+  flex-wrap: wrap;
+  overflow: visible;
+}

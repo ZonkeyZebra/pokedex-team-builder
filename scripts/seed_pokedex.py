@@ -10,6 +10,7 @@ Usage:
     python seed_pokedex.py --dry-run     # download + transform, print row counts, no database
     python seed_pokedex.py               # load into an EMPTY database (refuses otherwise)
     python seed_pokedex.py --reset       # wipe reference tables first (also deletes saved teams!)
+    python seed_pokedex.py --update-evolutions  # update only evolution conditions and form paths
     python seed_pokedex.py --update-form-descriptions  # update only curated form descriptions
 
 Notes:
@@ -39,7 +40,7 @@ CSV_FILES = [
     "natures", "items", "item_flags", "item_flag_map", "item_prose",
     "moves", "move_effect_prose", "pokemon", "pokemon_species",
     "pokemon_species_flavor_text", "pokemon_species_names", "pokemon_stats", "pokemon_types",
-    "pokemon_abilities", "pokemon_moves", "locations", "location_areas",
+    "pokemon_abilities", "pokemon_moves", "pokemon_forms", "locations", "location_areas",
     "location_names", "encounters", "encounter_slots", "encounter_methods",
     "pokemon_evolution", "evolution_triggers", "pokemon_egg_groups", "egg_groups",
     "egg_group_prose", "growth_rates", "pokemon_habitats", "pokemon_habitat_names",
@@ -55,6 +56,12 @@ LEARN_METHODS = {"1": "level-up", "2": "egg", "3": "tutor", "4": "machine"}
 STAT_CODES = {"2": "atk", "3": "def", "4": "spa", "5": "spd", "6": "spe"}
 DAMAGE_CLASSES = {"1": "status", "2": "physical", "3": "special"}
 MAX_TYPE_ID = 18  # normal..fairy; drops unknown, shadow, stellar
+EVOLUTION_COLUMNS = [
+    "evolution_chain_id", "from_species_id", "to_species_id", "trigger", "trigger_item",
+    "minimum_level", "minimum_happiness", "minimum_beauty", "minimum_affection", "gender",
+    "time_of_day", "known_move", "held_item", "location", "trade_species_id",
+    "needs_overworld_rain", "turn_upside_down", "details", "from_pokemon_id", "to_pokemon_id",
+]
 
 
 # ---------------------------------------------------------------- helpers
@@ -297,6 +304,7 @@ def build_egg_groups(src):
 
 def build_evolutions(src):
     species = {r["id"]: r for r in src.read("pokemon_species")}
+    pokemon_by_form = {r["id"]: num(r["pokemon_id"]) for r in src.read("pokemon_forms")}
     triggers = {r["id"]: r["identifier"] for r in src.read("evolution_triggers")}
     items = {r["id"]: r["identifier"] for r in src.read("items")}
     locations = {r["id"]: r["identifier"] for r in src.read("locations")}
@@ -354,6 +362,8 @@ def build_evolutions(src):
             r["needs_overworld_rain"] == "1",
             r["turn_upside_down"] == "1",
             "; ".join(details) or format_identifier(trigger),
+            pokemon_by_form.get(r["required_pokemon_form_id"]),
+            pokemon_by_form.get(r["evolved_pokemon_form_id"]),
         ))
     return rows
 
@@ -472,8 +482,13 @@ def load(database_url, tables, reset):
                 trade_species_id integer,
                 needs_overworld_rain boolean NOT NULL DEFAULT false,
                 turn_upside_down boolean NOT NULL DEFAULT false,
-                details text
+                details text,
+                from_pokemon_id integer,
+                to_pokemon_id integer
             );
+            ALTER TABLE pokemon_evolution
+                ADD COLUMN IF NOT EXISTS from_pokemon_id integer,
+                ADD COLUMN IF NOT EXISTS to_pokemon_id integer;
             CREATE INDEX IF NOT EXISTS idx_pokemon_species ON pokemon (species_id);
             CREATE INDEX IF NOT EXISTS idx_pokemon_evolution_chain ON pokemon_evolution (evolution_chain_id);
             ALTER TABLE egg_group ENABLE ROW LEVEL SECURITY;
@@ -537,12 +552,36 @@ def load(database_url, tables, reset):
         print(f"  {'TOTAL':<20} {total / 1_000_000:8.1f} MB  (free tier limit: 500 MB)")
 
 
+def update_evolutions(database_url, evolutions):
+    import psycopg  # imported here so --dry-run works without it installed
+
+    with psycopg.connect(database_url) as conn, conn.cursor() as cur:
+        cur.execute("""
+            ALTER TABLE pokemon_evolution
+                ADD COLUMN IF NOT EXISTS from_pokemon_id integer,
+                ADD COLUMN IF NOT EXISTS to_pokemon_id integer
+        """)
+        cur.execute("DELETE FROM pokemon_evolution")
+        with cur.copy(
+            f"COPY pokemon_evolution ({', '.join(EVOLUTION_COLUMNS)}) FROM STDIN"
+        ) as copy:
+            for row in evolutions:
+                copy.write_row(row)
+        cur.execute("ANALYZE pokemon_evolution")
+        print(f"Updated pokemon_evolution with {len(evolutions):,} rows.")
+
+
 # ---------------------------------------------------------------- main
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="transform only; do not touch the database")
     ap.add_argument("--reset", action="store_true", help="truncate reference tables (cascades to saved teams)")
+    ap.add_argument(
+        "--update-evolutions",
+        action="store_true",
+        help="replace only evolution rows and add form selectors (does not truncate saved teams)",
+    )
     ap.add_argument("--cache-dir", default="pokeapi_csv", help="where CSVs are cached (default: ./pokeapi_csv)")
     ap.add_argument(
         "--form-descriptions",
@@ -558,8 +597,8 @@ def main():
     args = ap.parse_args()
 
     if args.update_form_descriptions:
-        if args.reset or args.dry_run:
-            ap.error("--update-form-descriptions cannot be combined with --reset or --dry-run")
+        if args.reset or args.dry_run or args.update_evolutions:
+            ap.error("--update-form-descriptions cannot be combined with --reset, --dry-run, or --update-evolutions")
         if not args.database_url:
             sys.exit("Set DATABASE_URL (or pass --database-url) to update form descriptions.")
         form_descriptions = load_form_descriptions(args.form_descriptions)
@@ -568,12 +607,20 @@ def main():
         update_form_descriptions(args.database_url, form_descriptions)
         return
 
+    if args.update_evolutions and (args.reset or args.dry_run):
+        ap.error("--update-evolutions cannot be combined with --reset or --dry-run")
+
     if not args.dry_run and not args.database_url:
         sys.exit("Set DATABASE_URL (or pass --database-url), or use --dry-run.")
 
     src = Source(args.cache_dir)
     print("Fetching CSVs (cached after first run)...")
     src.download()
+
+    if args.update_evolutions:
+        print("Transforming evolution rows...")
+        update_evolutions(args.database_url, build_evolutions(src))
+        return
 
     print("Transforming...")
     source_pokemon_ids = {int(r["id"]) for r in src.read("pokemon")}
@@ -623,11 +670,7 @@ def main():
                      "shape", "habitat", "genus", "is_baby", "is_legendary", "is_mythical"], pokemon),
         ("egg_group", ["id", "name"], egg_groups),
         ("pokemon_egg_group", ["species_id", "egg_group_id"], pokemon_egg_groups),
-        ("pokemon_evolution", ["evolution_chain_id", "from_species_id", "to_species_id",
-                               "trigger", "trigger_item", "minimum_level", "minimum_happiness",
-                               "minimum_beauty", "minimum_affection", "gender", "time_of_day",
-                               "known_move", "held_item", "location", "trade_species_id",
-                               "needs_overworld_rain", "turn_upside_down", "details"], pokemon_evolutions),
+        ("pokemon_evolution", EVOLUTION_COLUMNS, pokemon_evolutions),
         ("pokemon_type", ["pokemon_id", "type_id", "slot"], pokemon_types),
         ("pokemon_ability", ["pokemon_id", "ability_id", "slot", "is_hidden"], pokemon_abilities),
         ("pokemon_move", ["pokemon_id", "move_id", "generation", "learn_method",

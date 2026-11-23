@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from scripts.seed_pokedex import build_pokemon, load_form_descriptions
+from scripts.seed_pokedex import build_evolutions, build_pokemon, load_form_descriptions
 
 
 class FixtureSource:
@@ -97,6 +97,60 @@ class BuildPokemonTests(unittest.TestCase):
             self.assertEqual(
                 load_form_descriptions(path, {38, 10104}),
                 {10104: "Curated Alolan entry."},
+            )
+
+
+class BuildEvolutionsTests(unittest.TestCase):
+    def test_form_selectors_map_pokeapi_form_ids_to_pokemon_ids(self):
+            def evolution_row(source_form_id, target_form_id, time_of_day):
+                return {
+                    "evolved_species_id": "745",
+                    "evolution_trigger_id": "1",
+                    "trigger_item_id": "",
+                    "minimum_level": "25",
+                    "minimum_happiness": "",
+                    "minimum_beauty": "",
+                    "minimum_affection": "",
+                    "gender_id": "",
+                    "time_of_day": time_of_day,
+                    "held_item_id": "",
+                    "location_id": "",
+                    "trade_species_id": "",
+                    "needs_overworld_rain": "0",
+                    "turn_upside_down": "0",
+                    "required_pokemon_form_id": str(source_form_id),
+                    "evolved_pokemon_form_id": str(target_form_id),
+                }
+
+            source = FixtureSource({
+                "pokemon_species": [{
+                    "id": "745",
+                    "evolution_chain_id": "383",
+                    "evolves_from_species_id": "744",
+                }],
+                "pokemon_forms": [
+                    {"id": "744", "pokemon_id": "744"},
+                    {"id": "745", "pokemon_id": "745"},
+                    {"id": "10228", "pokemon_id": "10126"},
+                    {"id": "10310", "pokemon_id": "10151"},
+                    {"id": "10311", "pokemon_id": "10152"},
+                ],
+                "pokemon_evolution": [
+                    evolution_row("744", "745", "day"),
+                    evolution_row("744", "10228", "night"),
+                    evolution_row("10310", "10311", "dusk"),
+                ],
+                "evolution_triggers": [{"id": "1", "identifier": "level-up"}],
+                "items": [],
+                "locations": [],
+                "location_names": [],
+            })
+
+            rows = build_evolutions(source)
+
+            self.assertEqual(
+                [(row[-2], row[-1]) for row in rows],
+                [(744, 745), (744, 10126), (10151, 10152)],
             )
 
 
