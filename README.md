@@ -294,15 +294,15 @@ Estimated hours for the 30–40 hour project budget:
 | Milestone | Est. hours | Status |
 |-----------|-----------:|--------|
 | Database schema, RLS, seed pipeline | — | Done |
-| Frontend foundation, email/password auth, home, starter pages | — | Started |
-| Pokédex list and detail pages (all generations) | 5–7 | Starter list and detail pages |
-| Basic team builder with live stats | 6–8 | Done |
-| Saved teams, Showdown import/export | 3–4 | Team sets and text import/export done |
+| Frontend foundation, email/password auth, home, starter pages | — | Done |
+| Pokédex list and detail pages (all generations) | 5–7 | In Progress |
+| Basic team builder with live stats | 6–8 | In Progress |
+| Saved teams, Showdown import/export | 3–4 | Done |
 | Interactive type chart | 2–3 | Done |
-| Team analysis: coverage, weaknesses, speed chart | 4–6 | Done |
-| "Team loses to" threat view | 3–5 | Done |
+| Team analysis: coverage, weaknesses, speed chart | 4–6 | In Progress |
+| "Team loses to" threat view | 3–5 | In Progress |
 | Damage calculator | 4–6 | Done |
-| Generation selector for learnsets and locations | 4–6 | Team move generation selector done |
+| Generation selector for learnsets and locations | 4–6 | Done |
 | Stretch: team-vs-team matchup, natural-language search | — | Not planned yet |
 
 ---
