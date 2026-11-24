@@ -2616,6 +2616,41 @@ a.pd-evo-card:hover {
   align-items: end;
 }
 
+.team-name-row,
+.rename-team-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-name-row h2 {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.team-name-row .text-button {
+  font-size: 11px;
+}
+
+.team-name-row .danger-text {
+  color: var(--error-ink);
+}
+
+.rename-team-form input {
+  min-width: 0;
+  width: min(250px, 100%);
+  padding: 9px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.rename-team-form .button {
+  padding: 9px 11px;
+}
+
 .team-tabs {
   display: flex;
   gap: 6px;

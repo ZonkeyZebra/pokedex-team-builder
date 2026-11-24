@@ -53,6 +53,8 @@ export default function TeamBuilderPage() {
   const [learnableMoves, setLearnableMoves] = useState<Move[]>([]);
   const [panel, setPanel] = useState<"build" | "analysis" | "import-export">("build");
   const [teamName, setTeamName] = useState("");
+  const [renamingTeam, setRenamingTeam] = useState(false);
+  const [editedTeamName, setEditedTeamName] = useState("");
   const [pokemonSearch, setPokemonSearch] = useState("");
   const [pokemonResults, setPokemonResults] = useState<Pokemon[]>([]);
   const [targetSlot, setTargetSlot] = useState<number | null>(null);
@@ -232,6 +234,39 @@ export default function TeamBuilderPage() {
     } finally { setSaving(false); }
   }
 
+  async function renameTeam(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !selectedTeam || !editedTeamName.trim()) return;
+    setSaving(true); setError(null);
+    try {
+      const name = editedTeamName.trim();
+      const { error: updateError } = await supabase.from("team").update({ name }).eq("id", selectedTeam.id);
+      if (updateError) throw updateError;
+      setTeams((current) => current.map((team) => team.id === selectedTeam.id ? { ...team, name } : team));
+      setRenamingTeam(false);
+      setMessage(`Renamed team to "${name}".`);
+    } catch (renameError) {
+      setError(renameError instanceof Error ? renameError.message : "Could not rename team.");
+    } finally { setSaving(false); }
+  }
+
+  async function deleteTeam() {
+    if (!supabase || !selectedTeam || saving) return;
+    if (!window.confirm(`Delete "${selectedTeam.name}" and all of its Pokémon? This cannot be undone.`)) return;
+    setSaving(true); setError(null); setMessage(null);
+    try {
+      const { error: deleteError } = await supabase.from("team").delete().eq("id", selectedTeam.id);
+      if (deleteError) throw deleteError;
+      const remainingTeams = teams.filter((team) => team.id !== selectedTeam.id);
+      setTeams(remainingTeams);
+      setTeamId(remainingTeams[0]?.id ?? null);
+      setRenamingTeam(false);
+      setMessage(`Deleted "${selectedTeam.name}".`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Could not delete team.");
+    } finally { setSaving(false); }
+  }
+
   async function searchPokemon(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !pokemonSearch.trim()) return;
@@ -291,13 +326,36 @@ export default function TeamBuilderPage() {
     const destination = members.find((entry) => entry.slot === destinationSlot);
     try {
       if (destination) {
-        const { error: swapError } = await supabase.rpc("swap_team_member_slots", {
-          p_team_id: selectedTeam.id,
-          p_first_slot: member.slot,
-          p_second_slot: destinationSlot,
-        });
-        if (swapError) {
-          throw new Error(`Could not swap slots. Apply db/migrations/20261123_team_slot_swap.sql and try again. ${swapError.message}`);
+        const occupiedSlots = new Set(members.map((entry) => entry.slot));
+        const temporarySlot = [1, 2, 3, 4, 5, 6].find((slot) => !occupiedSlots.has(slot));
+        if (temporarySlot !== undefined) {
+          const updateSlot = async (memberId: number, slot: number) => {
+            const { error: updateError } = await supabase!.from("team_member").update({ slot })
+              .eq("id", memberId).eq("team_id", selectedTeam.id).select("id").single();
+            if (updateError) throw updateError;
+          };
+          await updateSlot(member.id, temporarySlot);
+          try {
+            await updateSlot(destination.id, member.slot);
+            await updateSlot(member.id, destinationSlot);
+          } catch (swapError) {
+            try {
+              await updateSlot(destination.id, destination.slot);
+              await updateSlot(member.id, member.slot);
+            } catch (rollbackError) {
+              throw new Error(`Swap failed and could not be rolled back. Reload the page before editing this team. ${rollbackError instanceof Error ? rollbackError.message : ""}`);
+            }
+            throw swapError;
+          }
+        } else {
+          const { error: swapError } = await supabase.rpc("swap_team_member_slots", {
+            p_team_id: selectedTeam.id,
+            p_first_slot: member.slot,
+            p_second_slot: destinationSlot,
+          });
+          if (swapError) {
+            throw new Error(`Could not swap full-team slots. Check that the database migration was applied: db/migrations/20261123_team_slot_swap.sql. ${swapError.message}`);
+          }
         }
         setMembers((current) => current.map((entry) => entry.id === member.id
           ? { ...entry, slot: destinationSlot }
@@ -510,7 +568,22 @@ export default function TeamBuilderPage() {
         <section className="roster-panel">
           {selectedTeam ? <>
             <div className="roster-heading">
-              <div><p className="eyebrow">Generation {selectedTeam.generation}</p><h2>{selectedTeam.name}</h2></div>
+              <div>
+                <p className="eyebrow">Generation {selectedTeam.generation}</p>
+                {renamingTeam ? <form className="rename-team-form" onSubmit={(event) => void renameTeam(event)}>
+                  <input aria-label="Team name" autoFocus maxLength={60}
+                    onChange={(event) => setEditedTeamName(event.target.value)} required value={editedTeamName} />
+                  <button className="button primary" disabled={saving} type="submit">Save</button>
+                  <button className="button secondary" disabled={saving} onClick={() => setRenamingTeam(false)} type="button">Cancel</button>
+                </form> : <div className="team-name-row">
+                  <h2>{selectedTeam.name}</h2>
+                  <button className="text-button" disabled={saving} onClick={() => {
+                    setEditedTeamName(selectedTeam.name);
+                    setRenamingTeam(true);
+                  }} type="button">Rename</button>
+                  <button className="text-button danger-text" disabled={saving} onClick={() => void deleteTeam()} type="button">Delete</button>
+                </div>}
+              </div>
               <label className="generation-control">Move generation
                 <select aria-label="Move generation" value={selectedTeam.generation}
                   onChange={(event) => void changeGeneration(Number(event.target.value))}>

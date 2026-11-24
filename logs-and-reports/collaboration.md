@@ -1,0 +1,1 @@
+Worked with Kate and asked how her project was going and listened to others present on their projects on 11/23/2026 for 1 hour.
