@@ -2644,6 +2644,14 @@ a.pd-evo-card:hover {
   cursor: pointer;
 }
 
+.roster-slot.filled {
+  cursor: grab;
+}
+
+.roster-slot.filled:active {
+  cursor: grabbing;
+}
+
 .roster-slot.active-slot {
   border-color: var(--accent);
 }
@@ -2669,6 +2677,29 @@ a.pd-evo-card:hover {
 .editor-title h3,
 .tool-title h2 {
   margin: 0;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.move-slot-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.move-slot-control select {
+  min-width: 120px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
 }
 
 .editor-fields {
@@ -2941,6 +2972,16 @@ a.pd-evo-card:hover {
   .roster-heading {
     align-items: start;
     flex-direction: column;
+  }
+
+  .editor-title {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .editor-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .member-editor,

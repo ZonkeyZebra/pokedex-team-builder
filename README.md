@@ -18,6 +18,7 @@ A public web app for browsing every Pokémon across all generations and building
 ### Team builder
 - Six slots per team, with any number of saved teams
 - Per Pokémon: nickname, level, nature, ability, held item, EVs, IVs, and four moves
+- Click an open slot to add a Pokémon there; drag-and-drop or use the slot selector to move/swap team members
 - Live final-stat calculation as you edit
 - **Move picker filtered by generation:** only moves the Pokémon can learn in the selected generation are offered
 - Showdown-style text import/export
@@ -189,6 +190,8 @@ Row Level Security is enabled on every table:
 - User tables only allow a user to see and edit rows they own. Team members and their moves inherit ownership through the parent team.
 - EV and IV limits (252 per stat, 510 total, IVs 0–31) are `CHECK` constraints, so the database rejects invalid builds even if the UI has a bug.
 
+Existing databases must apply [`db/migrations/20261123_team_slot_swap.sql`](./db/migrations/20261123_team_slot_swap.sql) to enable atomic swaps between occupied slots. Fresh installs include the same function and deferrable slot constraint in `db/schema_postgres.sql`.
+
 ---
 
 ## Rules implemented
@@ -270,7 +273,8 @@ For a fresh seed, the same CSV overrides are applied automatically. Use descript
 ```
 .
 ├── db/
-│   └── schema_postgres.sql      # tables, constraints, RLS policies
+│   ├── schema_postgres.sql      # tables, constraints, RLS policies
+│   └── migrations/              # incremental database changes
 ├── data/
 │   └── pokemon_form_descriptions.csv # optional curated form-specific flavor text
 ├── scripts/

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 import { formatIdentifier } from "../lib/format";
 import {
@@ -52,11 +52,13 @@ export default function TeamBuilderPage() {
   const [teamName, setTeamName] = useState("");
   const [pokemonSearch, setPokemonSearch] = useState("");
   const [pokemonResults, setPokemonResults] = useState<Pokemon[]>([]);
+  const [targetSlot, setTargetSlot] = useState<number | null>(null);
   const [showdownText, setShowdownText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const pokemonSearchRef = useRef<HTMLInputElement>(null);
   const selectedTeam = teams.find((team) => team.id === teamId);
 
   useEffect(() => {
@@ -256,14 +258,16 @@ export default function TeamBuilderPage() {
     setSaving(true); setError(null);
     try {
       const occupied = new Set(members.map((member) => member.slot));
-      const slot = [1, 2, 3, 4, 5, 6].find((value) => !occupied.has(value)) ?? 1;
+      const slot = targetSlot !== null && !occupied.has(targetSlot)
+        ? targetSlot : [1, 2, 3, 4, 5, 6].find((value) => !occupied.has(value));
+      if (slot === undefined) return;
       const { data, error: insertError } = await supabase.from("team_member")
         .insert({ team_id: teamId, slot, pokemon_id: mon.id }).select("*").single();
       if (insertError) throw insertError;
       await loadPokemonTypes(mon.id);
       setPokemon((current) => ({ ...current, [mon.id]: mon }));
       setMembers((current) => [...current, { ...(data as Omit<Member, "moves">), moves: [null, null, null, null] }].sort((a, b) => a.slot - b.slot));
-      setActiveMember((data as Member).id); setPokemonResults([]); setPokemonSearch("");
+      setActiveMember((data as Member).id); setPokemonResults([]); setPokemonSearch(""); setTargetSlot(null);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not add Pokémon.");
     } finally { setSaving(false); }
@@ -276,6 +280,44 @@ export default function TeamBuilderPage() {
     if (deleteError) { setError(deleteError.message); return; }
     setMembers((current) => current.filter((entry) => entry.id !== member.id));
     if (activeMember === member.id) setActiveMember(members.find((entry) => entry.id !== member.id)?.id ?? null);
+  }
+
+  async function moveMember(member: Member, destinationSlot: number) {
+    if (!supabase || !selectedTeam || member.slot === destinationSlot || saving) return;
+    setSaving(true); setError(null); setMessage(null);
+    const destination = members.find((entry) => entry.slot === destinationSlot);
+    try {
+      if (destination) {
+        const { error: swapError } = await supabase.rpc("swap_team_member_slots", {
+          p_team_id: selectedTeam.id,
+          p_first_slot: member.slot,
+          p_second_slot: destinationSlot,
+        });
+        if (swapError) {
+          throw new Error(`Could not swap slots. Apply db/migrations/20261123_team_slot_swap.sql and try again. ${swapError.message}`);
+        }
+        setMembers((current) => current.map((entry) => entry.id === member.id
+          ? { ...entry, slot: destinationSlot }
+          : entry.id === destination.id ? { ...entry, slot: member.slot } : entry).sort((a, b) => a.slot - b.slot));
+        setMessage(`Swapped slots ${member.slot} and ${destinationSlot}.`);
+      } else {
+        const { error: moveError } = await supabase.from("team_member")
+          .update({ slot: destinationSlot }).eq("id", member.id).eq("team_id", selectedTeam.id);
+        if (moveError) throw moveError;
+        setMembers((current) => current.map((entry) => entry.id === member.id
+          ? { ...entry, slot: destinationSlot } : entry).sort((a, b) => a.slot - b.slot));
+        setMessage(`Moved ${formatIdentifier(pokemon[member.pokemon_id]?.name ?? "Pokémon")} to slot ${destinationSlot}.`);
+      }
+      setActiveMember(member.id);
+    } catch (moveError) {
+      setError(moveError instanceof Error ? moveError.message : "Could not move Pokémon to that slot.");
+    } finally { setSaving(false); }
+  }
+
+  function selectOpenSlot(slot: number) {
+    setTargetSlot(slot);
+    setError(null);
+    pokemonSearchRef.current?.focus();
   }
 
   async function saveMember(member: Member) {
@@ -486,13 +528,28 @@ export default function TeamBuilderPage() {
                   return <article className={`roster-slot${member ? " filled" : ""}${member?.id === activeMember ? " active-slot" : ""}`}
                     aria-label={member ? `Edit ${member.nickname || formatIdentifier(mon?.name ?? "Pokémon")}, slot ${index + 1}` : `Open team slot ${index + 1}`}
                     aria-pressed={member ? member.id === activeMember : undefined}
-                    key={index} onClick={() => member && setActiveMember(member.id)}
+                    draggable={Boolean(member) && !saving}
+                    key={index}
+                    onClick={() => member ? setActiveMember(member.id) : selectOpenSlot(index + 1)}
+                    onDragStart={(event) => {
+                      if (!member) return;
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", String(member.id));
+                    }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const memberId = Number(event.dataTransfer.getData("text/plain"));
+                      const dragged = members.find((entry) => entry.id === memberId);
+                      if (dragged) void moveMember(dragged, index + 1);
+                    }}
                     onKeyDown={(event) => {
-                      if (member && (event.key === "Enter" || event.key === " ")) {
+                      if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        setActiveMember(member.id);
+                        if (member) setActiveMember(member.id);
+                        else selectOpenSlot(index + 1);
                       }
-                    }} role={member ? "button" : undefined} tabIndex={member ? 0 : undefined}>
+                    }} role="button" tabIndex={0}>
                     <span className="slot-number">0{index + 1}</span>
                     {member && mon ? <>
                       {mon.sprite_url && <img alt="" src={mon.sprite_url} />}
@@ -503,9 +560,10 @@ export default function TeamBuilderPage() {
                 })}
               </div>
               {members.length < 6 && <div className="add-pokemon">
-                <h3>Add a Pokémon</h3>
+                <h3>Add a Pokémon{targetSlot !== null ? ` to slot ${targetSlot}` : ""}</h3>
                 <form className="search-row" onSubmit={searchPokemon}>
                   <input aria-label="Search Pokémon" onChange={(event) => setPokemonSearch(event.target.value)}
+                    ref={pokemonSearchRef}
                     placeholder="Search by name" value={pokemonSearch} />
                   <button className="button secondary" type="submit">Find</button>
                 </form>
@@ -520,7 +578,20 @@ export default function TeamBuilderPage() {
                 <div className="editor-title">
                   <div><p className="eyebrow">Set editor · slot {selectedMember.slot}</p>
                     <h3>{selectedMember.nickname || formatIdentifier(selectedPokemon.name)}</h3></div>
-                  <button className="text-button" onClick={() => void removeMember(selectedMember)} type="button">Remove</button>
+                  <div className="editor-actions">
+                    <label className="move-slot-control">Move / swap
+                      <select aria-label="Move Pokémon to slot" disabled={saving} onChange={(event) => {
+                        if (event.target.value) void moveMember(selectedMember, Number(event.target.value));
+                      }} value="">
+                        <option value="">Choose slot</option>
+                        {Array.from({ length: 6 }, (_, index) => index + 1).filter((slot) => slot !== selectedMember.slot).map((slot) => {
+                          const occupied = members.some((member) => member.slot === slot);
+                          return <option key={slot} value={slot}>Slot {slot}{occupied ? " (swap)" : " (open)"}</option>;
+                        })}
+                      </select>
+                    </label>
+                    <button className="text-button" onClick={() => void removeMember(selectedMember)} type="button">Remove</button>
+                  </div>
                 </div>
                 <div className="editor-fields">
                   <label>Nickname<input maxLength={30} onBlur={() => void saveMember(selectedMember)}
