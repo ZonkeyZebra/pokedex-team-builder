@@ -15,7 +15,7 @@ type Member = {
   moves: Array<number | null>;
 };
 type Pokemon = {
-  id: number; dex_number: number; name: string; sprite_url: string | null;
+  id: number; dex_number: number; name: string; form_name: string | null; sprite_url: string | null;
   base_hp: number; base_atk: number; base_def: number; base_spa: number; base_spd: number; base_spe: number;
 };
 type Type = { id: number; name: string };
@@ -112,7 +112,7 @@ export default function TeamBuilderPage() {
         }
         const memberIds = loaded.map((member) => member.id);
         const [pokemonResult, typeResult, moveRowsResult] = await Promise.all([
-          supabase!.from("pokemon").select("id,dex_number,name,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe").in("id", ids),
+          supabase!.from("pokemon").select("id,dex_number,name,form_name,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe").in("id", ids),
           supabase!.from("pokemon_type").select("pokemon_id,type_id").in("pokemon_id", ids),
           supabase!.from("team_member_move").select("team_member_id,slot,move_id").in("team_member_id", memberIds).order("slot"),
         ]);
@@ -233,8 +233,8 @@ export default function TeamBuilderPage() {
     setError(null);
     const term = pokemonSearch.trim().toLowerCase().replace(/\s+/g, "-");
     const { data, error: searchError } = await supabase.from("pokemon")
-      .select("id,dex_number,name,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe")
-      .eq("is_default", true).ilike("name", `%${term}%`).order("dex_number").limit(15);
+      .select("id,dex_number,name,form_name,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe")
+      .ilike("name", `%${term}%`).order("dex_number").order("id").limit(25);
     if (searchError) setError(searchError.message);
     else {
       setPokemonResults((data ?? []) as Pokemon[]);
@@ -359,8 +359,8 @@ export default function TeamBuilderPage() {
       for (const set of sets) {
         const identifier = toIdentifier(set.species);
         const { data: found, error: findError } = await supabase.from("pokemon")
-          .select("id,dex_number,name,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe")
-          .eq("is_default", true).ilike("name", identifier).limit(1).maybeSingle();
+          .select("id,dex_number,name,form_name,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe")
+          .ilike("name", identifier).limit(1).maybeSingle();
         if (findError) throw findError;
         if (!found) throw new Error(`Pokémon "${set.species}" was not found.`);
         const mon = found as Pokemon;
@@ -512,7 +512,8 @@ export default function TeamBuilderPage() {
                 {pokemonResults.length > 0 && <div className="pokemon-results">{pokemonResults.map((mon) =>
                   <button className="pokemon-result" disabled={saving} key={mon.id} onClick={() => void addPokemon(mon)}>
                     {mon.sprite_url && <img alt="" src={mon.sprite_url} />}
-                    <span>{formatIdentifier(mon.name)}</span><span className="result-number">#{mon.dex_number}</span>
+                    <span>{formatIdentifier(mon.name)}{mon.form_name && <small>{formatIdentifier(mon.form_name)} form</small>}</span>
+                    <span className="result-number">#{mon.dex_number}</span>
                   </button>)}</div>}
               </div>}
               {selectedMember && selectedPokemon && <section className="member-editor" aria-label={`${selectedPokemon.name} set editor`}>

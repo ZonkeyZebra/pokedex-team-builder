@@ -7,6 +7,7 @@ type Pokemon = {
   id: number;
   dex_number: number;
   name: string;
+  form_name: string | null;
   generation: number;
   sprite_url: string | null;
   base_hp: number;
@@ -19,7 +20,7 @@ type Pokemon = {
 
 const PAGE_SIZE = 48;
 const COLUMNS =
-  "id,dex_number,name,generation,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe";
+  "id,dex_number,name,form_name,generation,sprite_url,base_hp,base_atk,base_def,base_spa,base_spd,base_spe";
 
 export default function PokedexPage() {
   const [pokemon, setPokemon] = useState<Pokemon[]>([]);
@@ -48,8 +49,8 @@ export default function PokedexPage() {
       let query = supabase
         .from("pokemon")
         .select(COLUMNS, { count: "exact" })
-        .eq("is_default", true)
         .order("dex_number", { ascending: true })
+        .order("id", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
 
       if (search) {
@@ -141,7 +142,7 @@ export default function PokedexPage() {
           <section className="pokemon-grid" aria-label="Pokémon results">
             {pokemon.map((mon) => (
               <Link
-                aria-label={`View ${formatIdentifier(mon.name)} details`}
+                aria-label={`View ${formatIdentifier(mon.name)}${mon.form_name ? `, ${formatIdentifier(mon.form_name)} form` : ""} details`}
                 className="pokemon-card"
                 key={mon.id}
                 to={`/pokedex/${mon.id}`}
@@ -153,6 +154,7 @@ export default function PokedexPage() {
                 <div className="pokemon-info">
                   <p className="eyebrow">Generation {mon.generation}</p>
                   <h2>{formatIdentifier(mon.name)}</h2>
+                  {mon.form_name && <p className="pokemon-form-label">{formatIdentifier(mon.form_name)} form</p>}
                   <div className="stat-list" aria-label="Base stats">
                     <span>HP <b>{mon.base_hp}</b></span>
                     <span>ATK <b>{mon.base_atk}</b></span>

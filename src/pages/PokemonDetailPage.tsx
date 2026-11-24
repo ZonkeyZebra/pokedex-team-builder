@@ -74,7 +74,6 @@ type EncounterDetail = Encounter & { version_group: VersionGroup | null };
 type Matchup = { name: string; multiplier: number };
 type PokemonForm = Pick<Pokemon, "id" | "name" | "form_name" | "is_default" | "sprite_url" | "shiny_sprite_url">;
 type EggGroup = { id: number; name: string };
-// type EvolutionSpecies = { id: number; species_id: number; name: string; sprite_url: string | null };
 type Evolution = {
   from_species_id: number | null;
   to_species_id: number;
@@ -618,12 +617,6 @@ export default function PokemonDetailPage() {
                     <span className={`type-badge type-${type.name}`} key={type.id}>{formatIdentifier(type.name)}</span>
                   ))}
                 </div>
-                {!pokemon.is_default && (
-                  <p className="pd-banner">
-                    <strong>Viewing the {formatIdentifier(pokemon.form_name ?? pokemon.name)} form.</strong>{" "}
-                    Stats, types, abilities and matchups reflect this form.
-                  </p>
-                )}
               </header>
 
               <div aria-label="Pokémon sections" className="pd-tabs" onKeyDown={handleTabKeys} role="tablist">

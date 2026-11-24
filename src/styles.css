@@ -522,6 +522,12 @@ input::placeholder {
   white-space: nowrap;
 }
 
+.pokemon-info .pokemon-form-label {
+  margin: -7px 0 8px;
+  color: var(--accent);
+  font-size: 9px;
+}
+
 .stat-list {
   display: grid;
   grid-template-columns: repeat(3, auto);
@@ -777,6 +783,16 @@ input::placeholder {
   width: 32px;
   height: 32px;
   object-fit: contain;
+}
+
+.pokemon-result > span:first-of-type {
+  display: grid;
+  gap: 2px;
+}
+
+.pokemon-result small {
+  color: var(--accent);
+  font-size: 9px;
 }
 
 .result-number {
