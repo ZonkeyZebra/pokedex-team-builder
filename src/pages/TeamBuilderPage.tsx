@@ -24,6 +24,9 @@ type Named = { id: number; name: string };
 type NatureRow = Named & Nature;
 
 const GENERATIONS = [3, 4, 5, 6, 7, 8, 9];
+const STAT_LABELS: Record<StatKey, string> = {
+  hp: "HP", atk: "Attack", def: "Defense", spa: "Sp. Atk", spd: "Sp. Def", spe: "Speed",
+};
 
 function baseStats(mon: Pokemon): BaseStats {
   return { hp: mon.base_hp, atk: mon.base_atk, def: mon.base_def, spa: mon.base_spa, spd: mon.base_spd, spe: mon.base_spe };
@@ -617,15 +620,31 @@ export default function TeamBuilderPage() {
                     <option key={item.id} value={item.id}>{formatIdentifier(item.name)}</option>)}</select></label>
                 </div>
                 <div className="stats-editor">
-                  <h4>Final stats</h4>
-                  <div className="stat-table">
-                    <span>Stat</span><span>Base</span><span>EVs</span><span>IVs</span><span>Final</span>
-                    {STAT_KEYS.map((stat) => <StatRow key={stat} stat={stat} member={selectedMember}
-                      pokemon={selectedPokemon} onChange={(field, value) => editMember(selectedMember.id, { [field]: value })}
-                      onBlur={() => void saveMember(selectedMember)}
-                      nature={natures.find((nature) => nature.id === selectedMember.nature_id) ?? null} />)}
+                  <div className="stats-editor-heading">
+                    <div>
+                      <h4>Stats at level {selectedMember.level}</h4>
+                      <p>Adjust EVs and IVs to see final stats update instantly.</p>
+                    </div>
+                    <div className="ev-budget">
+                      <div><span>EV budget</span><strong>{STAT_KEYS.reduce((sum, stat) => sum + selectedMember[`ev_${stat}`], 0)}<small> / 510</small></strong></div>
+                      <progress aria-label="Total EVs used" max={510}
+                        value={STAT_KEYS.reduce((sum, stat) => sum + selectedMember[`ev_${stat}`], 0)} />
+                      <span>{510 - STAT_KEYS.reduce((sum, stat) => sum + selectedMember[`ev_${stat}`], 0)} remaining · max 252 per stat</span>
+                    </div>
                   </div>
-                  <p className="muted small-copy">EVs: {STAT_KEYS.reduce((sum, stat) => sum + selectedMember[`ev_${stat}`], 0)} / 510</p>
+                  <div className="stat-table-scroll">
+                    <table className="stat-table">
+                      <thead><tr><th scope="col">Stat</th><th scope="col">Base</th>
+                        <th scope="col">EVs</th><th scope="col">IVs</th>
+                        <th scope="col">Final</th></tr></thead>
+                      <tbody>{STAT_KEYS.map((stat) => <StatRow key={stat} stat={stat} member={selectedMember}
+                        pokemon={selectedPokemon} onChange={(field, value) => editMember(selectedMember.id, { [field]: value })}
+                        onBlur={() => void saveMember(selectedMember)}
+                        nature={natures.find((nature) => nature.id === selectedMember.nature_id) ?? null} />)}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="stat-help">EVs are effort values (0–252 per stat, 510 total). IVs are individual values (0–31).</p>
                 </div>
                 <div className="move-editor"><h4>Moves · learnable in Gen {selectedTeam.generation}</h4>
                   <div className="move-grid">{Array.from({ length: 4 }, (_, index) =>
@@ -668,13 +687,17 @@ function StatRow({ stat, member, pokemon, nature, onChange, onBlur }: {
   const ivs = Object.fromEntries(STAT_KEYS.map((key) => [key, member[`iv_${key}`]])) as StatValues;
   const maxEV = Math.min(252, member[evField] + 510 - STAT_KEYS.reduce((sum, key) => sum + member[`ev_${key}`], 0));
   const finalStats = calculateStats(baseStats(pokemon), member.level, evs, ivs, nature);
-  return <><strong>{stat.toUpperCase()}</strong><span>{baseStats(pokemon)[stat]}</span>
-    <input aria-label={`${stat.toUpperCase()} EVs`} max={maxEV}
-      min={0} onBlur={onBlur} onChange={(event) => onChange(evField, Math.min(maxEV, Math.max(0, Number(event.target.value) || 0)))}
-      type="number" value={member[evField]} />
-    <input aria-label={`${stat.toUpperCase()} IVs`} max={31} min={0} onBlur={onBlur}
+  return <tr>
+    <th className="stat-name" scope="row">{STAT_LABELS[stat]}</th>
+    <td className="stat-base">{baseStats(pokemon)[stat]}</td>
+    <td><input aria-label={`${STAT_LABELS[stat]} EVs`} max={maxEV} min={0} onBlur={onBlur}
+      onChange={(event) => onChange(evField, Math.min(maxEV, Math.max(0, Number(event.target.value) || 0)))}
+      type="number" value={member[evField]} /></td>
+    <td><input aria-label={`${STAT_LABELS[stat]} IVs`} max={31} min={0} onBlur={onBlur}
       onChange={(event) => onChange(ivField, Math.min(31, Math.max(0, Number(event.target.value) || 0)))}
-      type="number" value={member[ivField]} /><strong>{finalStats[stat]}</strong></>;
+      type="number" value={member[ivField]} /></td>
+    <td className="stat-final"><output>{finalStats[stat]}</output></td>
+  </tr>;
 }
 
 function TeamAnalysis({ analysis, types, members, pokemon, pokemonTypes, chart, natures }: {
