@@ -2,7 +2,7 @@
 
 A public web app for browsing every Pokémon across all generations and building competitive teams. Pick a team of six, customize natures, EVs/IVs, items, and moves, then see how well it covers the type chart, what it is weak to, and how fast it is. Teams are saved to a cloud database, so they are still there when you come back.
 
-> **Status:** database schema and seed pipeline are done; the frontend has email/password authentication, a home page, a searchable Pokédex with detail pages, and a starter team builder. See the [roadmap](#roadmap).
+> **Status:** database schema and seed pipeline are done. The frontend includes email/password authentication, the Pokédex, a team builder with saved sets and analysis, and type-chart and damage tools. See the [roadmap](#roadmap).
 
 ---
 
@@ -59,7 +59,7 @@ A public web app for browsing every Pokémon across all generations and building
 ```mermaid
 flowchart LR
     subgraph Client["Browser: single-page app"]
-        UI["Pages: Pokédex, Team Builder, Type Chart, Damage Calc"]
+        UI["Pages: Pokédex, Team Builder, Battle Tools"]
         LOGIC["Pure calculation modules: stats, type matchups, coverage, damage"]
         UI --> LOGIC
     end
@@ -277,7 +277,7 @@ For a fresh seed, the same CSV overrides are applied automatically. Use descript
 │   └── seed_pokedex.py          # PokeAPI CSV -> Supabase Postgres
 ├── src/
 │   ├── lib/                     # Supabase client, auth, formatting
-│   └── pages/                   # Sign-in, home, Pokédex, Team Builder
+│   └── pages/                   # Sign-in, home, Pokédex, Team Builder, battle tools
 └── README.md
 ```
 
@@ -292,13 +292,13 @@ Estimated hours for the 30–40 hour project budget:
 | Database schema, RLS, seed pipeline | — | Done |
 | Frontend foundation, email/password auth, home, starter pages | — | Started |
 | Pokédex list and detail pages (all generations) | 5–7 | Starter list and detail pages |
-| Basic team builder with live stats | 6–8 | Starter team creation and roster |
-| Saved teams, favorites, Showdown import/export | 3–4 | Not started |
-| Interactive type chart | 2–3 | Not started |
-| Team analysis: coverage, weaknesses, speed chart | 4–6 | Not started |
-| "Team loses to" threat view | 3–5 | Not started |
-| Damage calculator | 4–6 | Not started |
-| Generation selector for learnsets and locations | 4–6 | Not started |
+| Basic team builder with live stats | 6–8 | Done |
+| Saved teams, Showdown import/export | 3–4 | Team sets and text import/export done |
+| Interactive type chart | 2–3 | Done |
+| Team analysis: coverage, weaknesses, speed chart | 4–6 | Done |
+| "Team loses to" threat view | 3–5 | Done |
+| Damage calculator | 4–6 | Done |
+| Generation selector for learnsets and locations | 4–6 | Team move generation selector done |
 | Stretch: team-vs-team matchup, natural-language search | — | Not planned yet |
 
 ---

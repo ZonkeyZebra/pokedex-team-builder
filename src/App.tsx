@@ -10,6 +10,7 @@ const PokedexPage = lazy(() => import("./pages/PokedexPage"));
 const PokemonDetailPage = lazy(() => import("./pages/PokemonDetailPage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
 const TeamBuilderPage = lazy(() => import("./pages/TeamBuilderPage"));
+const ToolsPage = lazy(() => import("./pages/ToolsPage"));
 
 function PageLoading() {
   return <main className="center-screen"><p className="muted">Loading page…</p></main>;
@@ -41,6 +42,7 @@ function AppLayout({ children }: { children: ReactNode }) {
         <nav className="topnav" aria-label="Main navigation">
           <Link to="/pokedex">Pokédex</Link>
           <Link to="/team-builder">Team builder</Link>
+          <Link to="/tools">Battle tools</Link>
         </nav>
         <div className="account">
           <span className="account-email">{session?.user.email}</span>
@@ -107,6 +109,7 @@ function ProtectedRoutes() {
           }
         />
         <Route path="/team-builder" element={<Suspense fallback={<PageLoading />}><TeamBuilderPage /></Suspense>} />
+        <Route path="/tools" element={<Suspense fallback={<PageLoading />}><ToolsPage /></Suspense>} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </AppLayout>
